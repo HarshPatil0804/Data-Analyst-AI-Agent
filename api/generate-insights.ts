@@ -29,7 +29,10 @@ Rules:
 - Write 2-4 sentences of plain, direct prose. No bullet lists, no markdown formatting, no
   preamble like "Based on the data provided...".
 - Respond with ONLY a single JSON object, no markdown fences, no explanation outside the
-  JSON, in exactly this shape: {"narrative": "..."}`;
+  JSON, in exactly this shape: {"narrative": "..."}
+- The narrative value must be valid inside a JSON string: escape any newline as \n and any
+  double quote as \\" (e.g. prefer wording around a quoted value rather than embedding literal
+  quote marks, or escape them if you do).`;
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== "POST") {

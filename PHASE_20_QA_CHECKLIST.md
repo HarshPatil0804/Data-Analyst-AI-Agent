@@ -108,3 +108,18 @@ so it's never in question which one renders on top while scrolled.
 ### Still needs a real browser (added to the Phase 20 checklist above, not repeated here)
 
 - Whether the dropdown panel (fixed 256px wide, anchored to the right edge) stays fully on-screen at narrow mobile widths — plausible it's fine given the container's padding, not verified visually
+
+---
+
+## Phase 32 — Python JSON-escaping fix (found via live usage)
+
+**What changed:** `parseModelJson` (`api/_lib/util.ts`) now repairs the
+single most likely way multi-line Python code breaks JSON parsing — a
+literal newline/tab left inside a JSON string instead of being escaped as
+`\n`/`\t`. Thoroughly unit-tested (12 new tests covering the repair logic
+itself, escape-state tracking, and that it doesn't double-escape or break
+already-valid JSON), but the actual trigger — a real model emitting this
+exact malformed shape — can't be forced to happen in this sandbox.
+
+- [ ] Ask several Python-routed questions in a row (outlier detection, regression, correlation matrix) across a couple of different providers, and confirm none of them hit "Model response wasn't valid JSON and couldn't be parsed" anymore. The eval set's existing Python cases (#10, #26) already assert this — worth an explicit `npm run eval` pass now, not just spot-checking manually.
+- [ ] If it *does* still happen occasionally, that's not necessarily this fix failing — it could be the harder-to-repair sibling case (an unescaped literal quote inside the code, which this fix explicitly doesn't attempt to guess its way out of). Worth noting exactly which it is if it recurs.

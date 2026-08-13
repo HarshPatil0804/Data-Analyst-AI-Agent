@@ -1,7 +1,7 @@
 # AI Data Analyst Agent
 
 [![CI](https://github.com/Zephyrex21/ai-data-analyst-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Zephyrex21/ai-data-analyst-agent/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-196%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-208%20passing-brightgreen)
 ![zero server cost](https://img.shields.io/badge/server%20cost-%240-blue)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
@@ -65,7 +65,7 @@ Everything except the LLM calls runs **entirely in your browser** — DuckDB-WAS
 | Groq, Gemini, Mistral, Cerebras, Cohere — 5 free-tier providers with automatic server-side failover (Phase 30) | Each has a workable free tier with a different rate-limit window (per-minute, per-day, per-month); picking one and cascading through the rest on failure means a single provider being rate-limited no longer means "server busy" |
 | Validation layer, not just prompting | An LLM will occasionally write `MAX revenue` instead of `MAX(revenue)`, or invent a `profit_margin` column that doesn't exist. Prompting reduces this; a real validator catches what prompting misses |
 | Self-correction loop | When validation or execution fails, the exact error is fed back to the model for a fix — turns "rejected" into "usually just works" |
-| Vitest + CI | 196 tests, including mocked integration tests of the retry loop itself (not just the validators) and CSV edge cases (BOM, encodings, delimiters, line endings, size caps) — CI runs on every push |
+| Vitest + CI | 208 tests, including mocked integration tests of the retry loop itself (not just the validators) and CSV edge cases (BOM, encodings, delimiters, line endings, size caps) — CI runs on every push |
 
 ## Local development
 
@@ -87,7 +87,7 @@ npm test          # run once
 npm run test:watch
 ```
 
-196 tests: CSV parsing (including edge cases — BOM, non-UTF-8 encodings, delimiters, line endings, size caps), the SQL/Python validators, chart-type selection, conversation-history summarization, a sanity check on the bundled sample dataset, the 5-provider abstraction and its automatic failover cascade (mocked fetch — no real API calls or keys needed), the meta-engine phrasing/greeting classifier, the chart-tweak and follow-up-suggestion parsers, the conversation-report builder, and integration tests of the generate→validate→execute→retry orchestration loop (mocked LLM/execution, no network needed). CI (`.github/workflows/ci.yml`) runs the full suite plus a production build on every push and pull request to `main`.
+208 tests: CSV parsing (including edge cases — BOM, non-UTF-8 encodings, delimiters, line endings, size caps), the SQL/Python validators, chart-type selection, conversation-history summarization, a sanity check on the bundled sample dataset, the 5-provider abstraction and its automatic failover cascade, the shared model-response JSON parser and its repair pass for malformed multi-line code (mocked fetch — no real API calls or keys needed), the meta-engine phrasing/greeting classifier, the chart-tweak and follow-up-suggestion parsers, the conversation-report builder, and integration tests of the generate→validate→execute→retry orchestration loop (mocked LLM/execution, no network needed). CI (`.github/workflows/ci.yml`) runs the full suite plus a production build on every push and pull request to `main`.
 
 There's also a separate, non-CI eval suite (`npm run eval`) that hits the real LLM against 18 questions to catch prompt regressions — see `eval-set.md` for why it's deliberately kept out of CI.
 

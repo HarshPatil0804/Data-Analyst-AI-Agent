@@ -215,7 +215,64 @@ that a defensive-looking early return has quietly become a trap.
 
 ---
 
-**Pattern across all five** *(original set — #6 and #7 are later additions
+## 8. "Python sometimes works, sometimes doesn't" (found via live usage, again)
+
+**Symptom:** reported from the deployed app — Python-routed questions
+failed noticeably more often than SQL ones, with a raw error: "Model
+response wasn't valid JSON and couldn't be parsed." A second screenshot of
+the same underlying question, after the self-correction loop retried and
+switched engines, succeeded as SQL instead — which masked the real problem
+rather than fixing it: the app was quietly routing around a bug instead of
+the bug getting fixed.
+
+**Root cause:** the router asks the model for a single JSON object where
+the generated code is embedded as a JSON string value. JSON strings can't
+contain a literal line break — a newline inside one has to be written as
+the two characters `\n`. SQL answers are usually short and single-line, so
+this rarely came up. Python answers are naturally multi-line, and models
+don't always escape that correctly — occasionally emitting an actual line
+break inside the string instead of `\n`. That's invalid JSON syntax, so
+`JSON.parse` rejected the entire response, even though the Python code
+itself was perfectly fine. This explains the exact pattern reported: not
+"Python is broken," but "Python's code is structurally much more likely to
+trip a JSON-escaping edge case than SQL's."
+
+**Fix:** two parts. First, `parseModelJson` (shared by both `/api/generate-query`
+and `/api/generate-insights`) now has a repair pass: it walks the raw text
+tracking whether each character is inside a JSON string (toggling on an
+unescaped `"`), and if so, converts a literal newline/tab/carriage-return
+into its escaped form before retrying `JSON.parse`. This is a *targeted*
+repair for exactly this one failure mode, not a general "fix any broken
+JSON" tool — it deliberately doesn't try to guess its way out of other
+malformed JSON, since a wrong guess there could silently produce the wrong
+code instead of a clear error. Second, the system prompt now explicitly
+tells the model to escape newlines/quotes and to prefer single quotes
+inside Python/SQL string literals specifically to reduce how often
+escaping is even needed.
+
+**A bug inside the bug fix:** the first draft of that second part had its
+own mistake — writing `\"` inside a JS template literal to show the model
+an example of an escaped quote. In a JS template string, `\"` is an
+"unnecessary" escape that just evaluates to `"`, silently dropping the
+backslash — so the instructional text meant to say *"escape a quote as
+`\"`"* was actually rendering as *"escape a quote as `"`"*, missing the
+entire point. The linter caught it (`no-useless-escape`), and checking
+what the string actually evaluates to (not just what it looks like in the
+source) confirmed it. Needed `\\"` — an escaped backslash followed by a
+quote — to get the literal two-character sequence into the string. Fixing
+a bug about JSON string escaping by writing broken JS string escaping in
+the fix itself is the kind of thing worth admitting rather than quietly
+correcting off-screen.
+
+**Lesson:** when a fix's whole job is "make sure this exact character
+sequence ends up in the output," the fix is exactly the kind of code that
+deserves being checked by *running* it and inspecting the real value, not
+just by reading the source and assuming the escaping is right — the same
+principle applies to the diagnosis as to the code being diagnosed.
+
+---
+
+**Pattern across all five** *(original set — #6, #7, #8 are later additions
 following the same discipline):* none of these were caught by "it works on
 my machine." #1 needed a second locale. #2 needed a second occurrence to
 become a rule instead of a patch. #3 needed a domain read of the *answer*,
@@ -225,4 +282,6 @@ rule is exercised by the eval set's outlier case; the model swap was
 re-validated against the same eval set) specifically so the fix wouldn't
 silently regress on the next prompt change. #7 needed a live deployment —
 not this development environment — actually being used by someone, to
-surface a code path this environment structurally couldn't exercise.
+surface a code path this environment structurally couldn't exercise. #8
+needed a second screenshot to see that the retry loop had been quietly
+masking the real bug instead of fixing it.

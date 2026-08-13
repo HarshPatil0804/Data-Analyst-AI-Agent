@@ -75,6 +75,12 @@ or, if the question is NOT about this dataset at all (small talk, general knowle
 to the uploaded data, coding help unrelated to this schema, etc.):
 {"error": "OFF_TOPIC"}
 
+The "code" value must be valid inside a JSON string: escape every newline as \n (never a literal line
+break) and every double quote as \\". This matters most for "python" code, which is naturally multi-line —
+a literal line break instead of \n makes the whole response invalid JSON. Prefer single quotes for string
+literals inside the Python/SQL code itself (e.g. df['revenue'], not df["revenue"]) specifically so there
+are fewer double-quotes that need escaping in the first place.
+
 Rules when engine is "sql" (DuckDB):
 - Only use the table and columns given in the schema. Never invent columns that aren't listed.
 - Only SELECT statements. Never INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, or anything that modifies data.
