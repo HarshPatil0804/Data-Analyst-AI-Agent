@@ -1,21 +1,31 @@
+<p align="center">
+  <img src="docs/banner.svg" alt="AI Data Analyst Agent — execution-grounded data intelligence" width="100%">
+</p>
+
 # AI Data Analyst Agent
 
 [![CI](https://github.com/Zephyrex21/ai-data-analyst-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Zephyrex21/ai-data-analyst-agent/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-208%20passing-brightgreen)
-![zero server cost](https://img.shields.io/badge/server%20cost-%240-blue)
+![Tests](https://img.shields.io/badge/tests-208%20passing-brightgreen)
+![Server Cost](https://img.shields.io/badge/server%20cost-%240-blue)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-> Badge repo path assumes `Zephyrex21/ai-data-analyst-agent` — update if the actual GitHub repo name differs.
+> **Ask questions about a CSV in plain English and get answers grounded in executed data—not guesses.**
 
-Upload a CSV, ask questions about it in plain English, get a real, verified, executed answer back — not a guess. **[Try it live →](https://ai-data-analyst-agent-one.vercel.app/)** (loads a sample dataset with one click, no upload required).
+**[Try the live app →](https://ai-data-analyst-agent-one.vercel.app/)**
 
-**Data privacy, in one line:** your CSV never leaves your browser — DuckDB and Python both run client-side; the only thing that touches a server is the plain-text question itself, sent to whichever model provider actually answers (Groq, Gemini, Mistral, Cerebras, or Cohere — see below) to generate query code (never your data).
+## Overview
 
-## The problem this solves
+AI Data Analyst Agent turns natural-language questions into **validated, executable SQL or Python**, runs that code against the user's actual dataset in the browser, and presents the real result as a chart, table, or metric.
 
-Most "AI + your data" demos are LLM chat wrappers: the model reads a sample of your rows and generates plausible-sounding prose. It's confident, and it's frequently wrong — there's no execution, no verification, nothing stopping it from inventing a number that looks right.
+The core principle is simple:
 
-This project takes a different approach: the LLM never gets to just answer directly. For anything computable, it writes **SQL or Python**, that code gets **validated** against the real schema and a safety layer, then it's **actually executed** against the real data, and the real result is what gets shown. If the code is unsafe, hallucinates a column, or fails to run, the system **retries with the error fed back to the model** — up to 3 attempts — before giving up honestly. For genuinely open-ended questions ("summarize this dataset," "what stands out") there's an **insights engine** that runs a single batched DuckDB query for every column's real min/max/avg/stddev plus pairwise correlations between numeric columns (scoped to just the columns the question actually names, when it names any), then has the model narrate *only* those real numbers — structurally unable to invent a figure, same guarantee as SQL/Python, just phrased in prose. For questions about the dataset's *structure* rather than its values ("what columns do you have," "what can I ask you") there's a fourth **meta engine** that needs no LLM call at all — it's answered directly, instantly, and for free from schema facts already known client-side, with a cheap local heuristic to lead with the column list vs. the capability rundown depending on which the question actually seems to want, plus a real example row for concreteness. And if a question isn't about the dataset at all, the router says so honestly instead of chatting — that decline is deliberately worded differently from "this metric doesn't exist," so the two failure modes never look the same. Every answer shows a badge for which engine and which model provider produced it, and toggling **Dev Mode** reveals the exact generated code behind any SQL/Python answer.
+**LLM generates → validator checks → runtime executes → real result is returned.**
+
+For open-ended questions, an insights engine computes real statistics before the LLM narrates them. Structural questions use a local meta engine without an LLM call. Off-topic questions are explicitly declined rather than answered as if the system were a general chatbot.
+
+### Privacy-first execution
+
+CSV data never leaves the browser. DuckDB-WASM handles SQL execution and Pyodide runs Python/pandas inside a Web Worker. Only the user's plain-text question is sent to the selected model provider through a small serverless proxy; provider API keys never reach the client.
 
 ## Architecture
 
@@ -46,86 +56,124 @@ flowchart TD
     META --> C
 ```
 
-Everything except the LLM calls runs **entirely in your browser** — DuckDB-WASM for SQL and for the insights engine's stat queries, Pyodide (in a Web Worker, so it never freezes the UI) for statistical Python. The only server-side code is two small serverless functions that proxy whichever model provider is selected, so no API key ever reaches the client. The insights engine specifically never lets the model invent a number — it only ever narrates figures a real DuckDB query already computed.
+Everything except the LLM calls runs **entirely in the browser**. The system uses DuckDB-WASM for SQL and statistical queries, and Pyodide in a Web Worker for Python execution.
 
-## Screenshots
+## Core Engineering
 
-| | |
-|---|---|
-| ![Homepage](docs/screenshots/01-homepage.png) Homepage | ![SQL-answered question](docs/screenshots/02-sql-answer-chart.png) SQL answer, chart + code shown |
+| Capability | Implementation |
+| --- | --- |
+| Natural language analysis | LLM-generated SQL, Python, insights, or meta responses |
+| SQL execution | DuckDB-WASM in the browser |
+| Python execution | Pyodide + pandas in a Web Worker |
+| Code safety | SQL/Python validation before execution |
+| Self-correction | Up to 3 retries with validation/execution errors fed back to the model |
+| Model resilience | Groq → Gemini → Mistral → Cerebras → Cohere fallback chain |
+| Insights | Real DuckDB statistics narrated by the model |
+| Visualization | Automatic chart selection + tables + big-number results |
+| Conversation | Multi-turn context and session caching |
+| Privacy | Dataset stays client-side |
 
-*(See `demo-script.md` for the full shot list.)*
+## Why It Is Different
 
-## Why these specific choices
+Most “chat with your data” applications allow an LLM to reason directly over sampled rows. This project instead makes **execution the source of truth**.
 
-| Choice | Why |
-|---|---|
-| DuckDB-WASM over a backend DB | Zero server cost, zero server security surface — nothing executes anywhere but the user's own browser |
-| Pyodide in a **Web Worker**, warmed up in the background right after upload | Running Python/pandas on the main thread would freeze the UI during the ~10-20s first load; the worker keeps the page responsive, and starting that download immediately after upload (Phase 25) means it's often already done by the time a question actually needs it — skipped automatically if the browser signals data-saver mode |
-| Groq, Gemini, Mistral, Cerebras, Cohere — 5 free-tier providers with automatic server-side failover (Phase 30) | Each has a workable free tier with a different rate-limit window (per-minute, per-day, per-month); picking one and cascading through the rest on failure means a single provider being rate-limited no longer means "server busy" |
-| Validation layer, not just prompting | An LLM will occasionally write `MAX revenue` instead of `MAX(revenue)`, or invent a `profit_margin` column that doesn't exist. Prompting reduces this; a real validator catches what prompting misses |
-| Self-correction loop | When validation or execution fails, the exact error is fed back to the model for a fix — turns "rejected" into "usually just works" |
-| Vitest + CI | 208 tests, including mocked integration tests of the retry loop itself (not just the validators) and CSV edge cases (BOM, encodings, delimiters, line endings, size caps) — CI runs on every push |
+- The model does not directly invent numeric answers.
+- Generated SQL/Python is validated before execution.
+- Hallucinated columns and unsafe operations are rejected.
+- Failed execution is returned to the model for correction.
+- Insights are computed from real statistics before narration.
+- Meta questions are answered locally without an LLM call.
+- Off-topic questions receive an explicit decline.
 
-## Local development
+## Features
 
-This project has a Vercel serverless function (`/api/generate-query.ts`), so plain `npm run dev` will run the frontend but the API route won't work — use the Vercel CLI:
+- Drag-and-drop CSV upload with client-side type inference
+- Bundled sample dataset for zero-setup demonstrations
+- Natural language → SQL, Python, insights, or meta responses
+- Multi-turn follow-up questions
+- Automatic SQL/Python validation and self-correction
+- Automatic model-provider failover
+- Schema-aware follow-up suggestions
+- Natural-language chart adjustments
+- Dev Mode with generated SQL/Python
+- Charts, tables and big-number results
+- PNG chart export and Markdown conversation export
+- Session caching for repeated questions
+- Proactive dataset summary and data-quality signals
 
-```
+## Tech Stack
+
+| Layer | Technologies |
+| --- | --- |
+| Frontend | React, TypeScript, Vite, Tailwind CSS |
+| Data | DuckDB-WASM, PapaParse |
+| Python runtime | Pyodide, pandas, Web Workers |
+| AI | Groq, Gemini, Mistral, Cerebras, Cohere |
+| Backend | Vercel Serverless Functions |
+| Testing | Vitest |
+| Deployment | Vercel |
+
+## Local Development
+
+The application uses a Vercel serverless function for model calls, so use the Vercel CLI for local development.
+
+```bash
 npm install -g vercel
 npm install
-cp .env.local.example .env.local   # then paste your real key(s) into .env.local
+cp .env.local.example .env.local
 vercel dev
 ```
 
-Get a free Groq API key (no card required) at https://console.groq.com — that's the only one required. Everything else is optional: add any of `GEMINI_API_KEY` ([aistudio.google.com](https://aistudio.google.com/apikey)), `MISTRAL_API_KEY` ([console.mistral.ai](https://console.mistral.ai)), `CEREBRAS_API_KEY` ([cloud.cerebras.ai](https://cloud.cerebras.ai)), or `COHERE_API_KEY` ([dashboard.cohere.com](https://dashboard.cohere.com)) — all free, none need a card. More keys means more automatic failover (Phase 30): if your preferred provider is rate-limited, the server tries the next configured one immediately instead of showing an error. Missing keys are simply skipped, not required.
+Set `GROQ_API_KEY` as the required provider key. Gemini, Mistral, Cerebras and Cohere keys are optional; configured providers participate in the automatic fallback chain.
 
 ## Testing
 
-```
-npm test          # run once
+```bash
+npm test
 npm run test:watch
 ```
 
-208 tests: CSV parsing (including edge cases — BOM, non-UTF-8 encodings, delimiters, line endings, size caps), the SQL/Python validators, chart-type selection, conversation-history summarization, a sanity check on the bundled sample dataset, the 5-provider abstraction and its automatic failover cascade, the shared model-response JSON parser and its repair pass for malformed multi-line code (mocked fetch — no real API calls or keys needed), the meta-engine phrasing/greeting classifier, the chart-tweak and follow-up-suggestion parsers, the conversation-report builder, and integration tests of the generate→validate→execute→retry orchestration loop (mocked LLM/execution, no network needed). CI (`.github/workflows/ci.yml`) runs the full suite plus a production build on every push and pull request to `main`.
+The project currently contains **208 automated tests** covering CSV edge cases, validators, chart selection, conversation handling, provider failover, response parsing, retry orchestration and other core behavior. CI runs the test suite and production build on pushes and pull requests to `main`.
 
-There's also a separate, non-CI eval suite (`npm run eval`) that hits the real LLM against 18 questions to catch prompt regressions — see `eval-set.md` for why it's deliberately kept out of CI.
+A separate evaluation suite can be run with:
 
-## Deploying
+```bash
+npm run eval
+```
 
-Push to GitHub, import the repo in Vercel, then add `GROQ_API_KEY` (required) and optionally any of `GEMINI_API_KEY` / `MISTRAL_API_KEY` / `CEREBRAS_API_KEY` / `COHERE_API_KEY` under Project Settings → Environment Variables and redeploy.
+The evaluation suite uses real LLM calls against a fixed question set and is intentionally kept outside CI.
 
-## Feature overview
+## Security & Privacy
 
-- Drag-and-drop CSV upload with client-side type inference, malformed-row handling, and a one-click bundled sample dataset (1,440 rows, 90 days, 4 regions/products) for zero-setup demos
-- Natural language → SQL (DuckDB-WASM), Python (Pyodide/pandas), a narrated "insights" answer over real precomputed stats, or a "meta" answer about the dataset's structure/capabilities — router picks per question
-- Off-topic questions get a distinct, honest decline from "on-topic but this metric doesn't exist" — the app never pretends to be a general chatbot
-- Repeat questions (re-clicking a sample question, asking the same thing twice) answer instantly from an in-memory session cache instead of burning another LLM call — cleared on reset/new upload, and switching model provider always forces a fresh call
-- Greetings and small talk ("hi", "thanks!") get a friendly reply instead of the off-topic decline — still can't be talked into answering anything unrelated to the data
-- A proactive welcome message right after upload — real row/column counts and a data-quality heads-up (e.g. "region is missing values in 12% of rows") before you've asked anything
-- Follow-up suggestions after every answer, generated from the real schema (not hardcoded) — Dev Mode toggle shows the SQL/Python behind any answer, with a one-click copy
-- Natural-language chart tweaks ("make it a bar chart", "sort descending") apply instantly to the last answer — no LLM call, since nothing new needs computing
-- Regenerate button to force a fresh (non-cached) attempt at the same question; export any chart as a PNG, or the whole conversation as a Markdown report
-- Dev Mode toggle — reveals the exact generated SQL/Python behind each answer
-- Switchable model provider (Groq, Gemini, Mistral, Cerebras, or Cohere) via a dropdown showing each model's name and a quick descriptor (Fast, Balanced, Efficient, Fastest, Fallback) — your pick is remembered and shown per-answer. If your preferred provider is rate-limited, the server automatically tries the next configured one instead of failing — and if that happens, the answer is honestly labeled "auto-switched," never silently swapped
-- Charts auto-selected by result shape (pie/bar/line/big-number), tables always available as ground truth
-- Safety validator: blocks non-SELECT statements, unknown tables/columns, unsafe Python patterns; caps result size
-- Self-correcting retry loop (max 3 attempts) with full error context fed back to the model
-- Multi-turn conversation memory — follow-up questions like "now break that down by region" work
-- Fully client-side execution; only the LLM call touches a server
+- CSV files remain client-side.
+- API keys are kept behind serverless functions.
+- Only the user's question is sent to an LLM provider.
+- SQL is restricted to safe read operations.
+- Unknown tables and columns are rejected.
+- Unsafe Python patterns are blocked.
+- Result sizes are capped.
+- Failed generations are retried with execution context rather than blindly displayed.
 
-## Known limitations / not implemented
+## Limitations
 
-- Single flat table only — no joins, no multi-file uploads. Multi-statement CTEs (`WITH ... AS (...)`) aren't supported either, but single-level subqueries and window functions are (e.g. "top N per group" via `ROW_NUMBER() OVER (PARTITION BY ...)`) — see `sqlValidator.ts` for exactly what's allowed
-- The SQL/Python validators are heuristic, not full parsers — they catch destructive statements and hallucinated columns, not every possible malformed query (that's what the retry loop is for)
-- No auth/persistence — this is a stateless, single-session tool by design
+- Single flat-table datasets only
+- No joins or multi-file analysis
+- Multi-statement CTEs are not supported
+- Validators are heuristic rather than full SQL/Python parsers
+- No authentication or persistent server-side sessions by design
 
-## More
+## Documentation
 
-- [`ENGINEERING_JOURNAL.md`](./ENGINEERING_JOURNAL.md) — real bugs found and fixed during this build, and what each one actually taught
-- [`demo-script.md`](./demo-script.md) — a ~60-90s shot list for a demo video
-- [`eval-set.md`](./eval-set.md) — how the prompt itself gets regression-tested
+- [`ENGINEERING_JOURNAL.md`](./ENGINEERING_JOURNAL.md) — engineering decisions, bugs and fixes
+- [`demo-script.md`](./demo-script.md) — demo video shot list
+- [`eval-set.md`](./eval-set.md) — LLM regression evaluation set
 
 ## License
 
-[MIT](./LICENSE) — do whatever you want with this, no attribution required (though a star is always appreciated).
+[MIT](./LICENSE)
+
+---
+
+<p align="center">
+  Built around one principle: <strong>execute the data, then trust the result.</strong>
+</p>
