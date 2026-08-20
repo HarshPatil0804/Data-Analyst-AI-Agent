@@ -1,5 +1,5 @@
 import { DEFAULT_PROVIDER, isProviderId, ProviderError, callWithFallback, type ProviderId } from "./providers";
-import { jsonResponse, log } from "./_lib/util";
+import { jsonResponse, log, parseModelJson } from "./_lib/util";
 
 export const config = { runtime: "edge" };
 
@@ -59,43 +59,27 @@ answer rather than a decline. OFF_TOPIC is specifically for requests that want t
 something unrelated to this dataset (write a poem, answer a trivia question, help with unrelated code),
 not for a passing "hi" or "thanks".
 
-Respond in this EXACT plain-text format — a header line, then (for sql/python only) a single fenced
-code block with the code written exactly as it should run. This is NOT JSON — there is no escaping of
-quotes or newlines to think about, just write the code verbatim inside the fence, the same way you
-would in any normal code block:
-
-ENGINE: sql
-\`\`\`sql
-SELECT ...
-\`\`\`
-
+Respond with ONLY a single JSON object, no markdown fences, no explanation outside the JSON, in exactly
+this shape:
+{"engine": "sql", "code": "..."}
 or
-
-ENGINE: python
-\`\`\`python
-result = ...
-\`\`\`
-
+{"engine": "python", "code": "..."}
 or
-
-ENGINE: insights
-
+{"engine": "insights"}
 or
-
-ENGINE: meta
-
+{"engine": "meta"}
 or, if the question is ON-TOPIC (genuinely about this dataset) but asks for a metric that isn't
 derivable from these columns (e.g. "profit margin" with no cost column):
-
-ERROR: NO_QUERY_POSSIBLE
-
+{"error": "NO_QUERY_POSSIBLE"}
 or, if the question is NOT about this dataset at all (small talk, general knowledge, requests unrelated
 to the uploaded data, coding help unrelated to this schema, etc.):
+{"error": "OFF_TOPIC"}
 
-ERROR: OFF_TOPIC
-
-Nothing else goes before the ENGINE/ERROR line. For "insights" and "meta" there is no code block at all —
-just the ENGINE line, since those never run code.
+The "code" value must be valid inside a JSON string: escape every newline as \n (never a literal line
+break) and every double quote as \\". This matters most for "python" code, which is naturally multi-line —
+a literal line break instead of \n makes the whole response invalid JSON. Prefer single quotes for string
+literals inside the Python/SQL code itself (e.g. df['revenue'], not df["revenue"]) specifically so there
+are fewer double-quotes that need escaping in the first place.
 
 Rules when engine is "sql" (DuckDB):
 - Only use the table and columns given in the schema. Never invent columns that aren't listed.
@@ -156,41 +140,6 @@ interface ParsedModelResponse {
   error?: string;
 }
 
-const ERROR_RE = /ERROR:\s*(NO_QUERY_POSSIBLE|OFF_TOPIC)/i;
-const ENGINE_RE = /ENGINE:\s*(sql|python|insights|meta)/i;
-const CODE_FENCE_RE = /```[a-zA-Z]*\r?\n([\s\S]*?)```/;
-
-/**
- * Parses the ENGINE/ERROR header + fenced-code-block format described in
- * SYSTEM_PROMPT above. Deliberately NOT JSON: earlier this endpoint asked
- * for code embedded as a JSON string, which meant the model had to
- * correctly escape every newline and quote inside the code — Python code
- * especially, being naturally multi-line, tripped this constantly (see
- * Engineering Journal #8). Extracting a fenced code block verbatim needs
- * no escaping at all, so there's nothing left for the model to get wrong
- * in that specific way.
- */
-export function parseEngineResponse(raw: string): ParsedModelResponse | null {
-  const text = raw.trim();
-
-  const errorMatch = text.match(ERROR_RE);
-  if (errorMatch) {
-    return { error: errorMatch[1].toUpperCase() };
-  }
-
-  const engineMatch = text.match(ENGINE_RE);
-  if (!engineMatch) return null;
-  const engine = engineMatch[1].toLowerCase();
-
-  if (engine === "insights" || engine === "meta") {
-    return { engine };
-  }
-
-  const codeMatch = text.match(CODE_FENCE_RE);
-  if (!codeMatch) return null;
-  return { engine, code: codeMatch[1] };
-}
-
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== "POST") {
     return jsonResponse({ error: "Method not allowed." }, 405);
@@ -244,10 +193,10 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const { raw, providerUsed } = await callWithFallback(preferredProvider, SYSTEM_PROMPT, userPrompt, log);
 
-    const parsed = parseEngineResponse(raw);
+    const parsed = parseModelJson<ParsedModelResponse>(raw);
     if (!parsed) {
       return jsonResponse(
-        { error: "Model response didn't match the expected format and couldn't be parsed." },
+        { error: "Model response wasn't valid JSON and couldn't be parsed." },
         502
       );
     }

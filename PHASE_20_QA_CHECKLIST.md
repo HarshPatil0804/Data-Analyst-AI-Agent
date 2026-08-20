@@ -111,35 +111,15 @@ so it's never in question which one renders on top while scrolled.
 
 ---
 
-## Phase 32 — Python JSON-escaping fix (superseded by Phase 33 below)
+## Phase 32 — Python JSON-escaping fix (found via live usage)
 
-**Update:** this fix (a repair pass for literal newlines inside JSON
-strings) was real and correct as far as it went, but turned out to only
-cover one of the ways this could fail. The same bug recurred in a
-different shape shortly after shipping — see Journal entry #9. Phase 33
-below replaces the router's response format entirely rather than
-continuing to patch around it; the checklist items that were here are
-superseded by Phase 33's.
+**What changed:** `parseModelJson` (`api/_lib/util.ts`) now repairs the
+single most likely way multi-line Python code breaks JSON parsing — a
+literal newline/tab left inside a JSON string instead of being escaped as
+`\n`/`\t`. Thoroughly unit-tested (12 new tests covering the repair logic
+itself, escape-state tracking, and that it doesn't double-escape or break
+already-valid JSON), but the actual trigger — a real model emitting this
+exact malformed shape — can't be forced to happen in this sandbox.
 
-## Phase 33 — Router response format: JSON-embedded code → fenced code block
-
-**What changed:** `/api/generate-query` no longer asks the model for
-`{"engine": "sql", "code": "..."}`. It now asks for a plain `ENGINE: sql`
-header line followed by an ordinary fenced code block, parsed by
-`parseEngineResponse` (`api/generate-query.ts`) instead of JSON.parse. This
-removes the entire class of "model didn't escape the code correctly"
-failures rather than trying to repair them after the fact — see Journal
-entry #9 for the full reasoning. The narrative-only insights response
-(`/api/generate-insights`) is unchanged, still JSON, still has entry #8's
-repair pass as a safety net.
-
-Thoroughly unit-tested (18 tests covering quotes, newlines, backslashes,
-CRLF line endings, missing fences, case-insensitivity, and the exact
-combination from the bug report — a literal double-quote inside multi-line
-Python code). The external HTTP contract to the client is unchanged (still
-`{engine, code, provider}` JSON in the response body), so nothing
-downstream of this endpoint needed to change, and the eval set's 28 cases
-still apply as-is without modification.
-
-- [ ] This is the one that actually needs the live check the previous two Python-related entries asked for and didn't fully get: ask several Python-routed questions (outlier detection, regression, correlation, anything involving a column filter with a string comparison like `region == "North"`) across multiple providers, several times each, and confirm none of them hit a parse-failure error anymore.
-- [ ] If a Python question still fails, check the failure message specifically — "Model response didn't match the expected format" (new) means the model didn't produce an ENGINE line or fenced block at all (a genuinely different, rarer problem, worth capturing the raw response if it happens), versus the old "wasn't valid JSON" message, which should no longer be possible to reach from this endpoint at all now.
+- [ ] Ask several Python-routed questions in a row (outlier detection, regression, correlation matrix) across a couple of different providers, and confirm none of them hit "Model response wasn't valid JSON and couldn't be parsed" anymore. The eval set's existing Python cases (#10, #26) already assert this — worth an explicit `npm run eval` pass now, not just spot-checking manually.
+- [ ] If it *does* still happen occasionally, that's not necessarily this fix failing — it could be the harder-to-repair sibling case (an unescaped literal quote inside the code, which this fix explicitly doesn't attempt to guess its way out of). Worth noting exactly which it is if it recurs.

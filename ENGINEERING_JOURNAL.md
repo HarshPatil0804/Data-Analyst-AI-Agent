@@ -272,72 +272,16 @@ principle applies to the diagnosis as to the code being diagnosed.
 
 ---
 
-## 9. Same bug, back again — the patch wasn't the fix (found via live usage, a third time)
-
-**Symptom:** the *exact same* "Python sometimes works, sometimes doesn't"
-report came back after entry #8's fix had already shipped — this time with
-Groq instead of Gemini, and a cleaner error: "Model response wasn't valid
-JSON and couldn't be parsed." Entry #8's repair pass specifically handled
-one failure shape (a literal newline left un-escaped inside a JSON
-string). This was almost certainly the *other* shape it explicitly
-couldn't touch: a literal double-quote inside the Python code — common
-whenever a model writes `df["revenue"]` instead of `df['revenue']` — which
-looks to a JSON parser exactly like the string ending early, corrupting
-everything after it. No amount of careful escape-tracking can safely
-"repair" that case, because there's no way to tell, from the text alone,
-whether a quote was meant to close the string or continue it.
-
-**Root cause, actually:** entry #8 treated this as "make the repair
-smarter." That was the wrong frame. The real problem was the *contract*:
-asking a model to hand-write JSON-escaped code was always going to be
-fragile, because it requires the model to get a mechanical, easy-to-mess-up
-transformation exactly right on every single response, for content
-(multi-line code, with quotes) that's specifically the hardest kind of
-content to embed correctly in a JSON string. A second occurrence of "JSON
-escaping breaks Python code," in a different shape than the first, is the
-same signal Journal #2 already named for a completely different bug: the
-second time the same *class* of problem shows up, that's the cue to fix
-the actual rule, not extend the patch.
-
-**Fix:** removed the requirement to escape code at all. The router no
-longer asks for `{"engine": "sql", "code": "..."}` — it asks for a plain
-`ENGINE: sql` header line followed by the code in an ordinary fenced code
-block (```` ```sql ... ``` ````), extracted verbatim. Models are trained on
-enormously more examples of "write code in a fenced block" than "write
-code correctly double-escaped inside a JSON string," so this plays to what
-the model already does well by default, rather than asking it to perform a
-finicky transformation correctly every time. The only thing still parsed
-as JSON is the insights engine's narrative (plain prose, much less prone
-to this failure shape) — which still has entry #8's repair pass as a
-safety net, since prose can occasionally contain a stray quote too.
-
-**Lesson:** entry #8 wasn't wrong, exactly — the repair pass it added is
-still correct and still active for the narrative path. But it was treating
-a structural mismatch (asking for the wrong *kind* of thing) as if it were
-an input-quality problem (a model occasionally messing up an easy task).
-Once the same failure came back in a new shape, that distinction mattered:
-no repair heuristic was ever going to fully close a gap that only exists
-because the format itself demands something error-prone. The fix that
-actually holds is the one where the model doesn't have to get the tricky
-part right at all, not the one where its mistakes get caught more cleverly
-after the fact.
-
----
-
-**Pattern across all five** *(original set — #6, #7, #8, #9 are later
-additions following the same discipline):* none of these were caught by
-"it works on my machine." #1 needed a second locale. #2 needed a second
-occurrence to become a rule instead of a patch. #3 needed a domain read of
-the *answer*, not just the math. #4 needed watching an external
-dependency's own announcements. #3 and #4 both got a regression check
-added (the grouping rule is exercised by the eval set's outlier case; the
-model swap was re-validated against the same eval set) specifically so the
-fix wouldn't silently regress on the next prompt change. #7 needed a live
-deployment — not this development environment — actually being used by
-someone, to surface a code path this environment structurally couldn't
-exercise. #8 needed a second screenshot to see that the retry loop had
-been quietly masking the real bug instead of fixing it. #9 needed the
-*same* bug to come back in a *different* shape to reveal that #8 had fixed
-a symptom, and #2's lesson — a second occurrence changes what kind of fix
-is actually called for — turned out to apply to an entirely different bug
-than the one it was first learned from.
+**Pattern across all five** *(original set — #6, #7, #8 are later additions
+following the same discipline):* none of these were caught by "it works on
+my machine." #1 needed a second locale. #2 needed a second occurrence to
+become a rule instead of a patch. #3 needed a domain read of the *answer*,
+not just the math. #4 needed watching an external dependency's own
+announcements. #3 and #4 both got a regression check added (the grouping
+rule is exercised by the eval set's outlier case; the model swap was
+re-validated against the same eval set) specifically so the fix wouldn't
+silently regress on the next prompt change. #7 needed a live deployment —
+not this development environment — actually being used by someone, to
+surface a code path this environment structurally couldn't exercise. #8
+needed a second screenshot to see that the retry loop had been quietly
+masking the real bug instead of fixing it.
