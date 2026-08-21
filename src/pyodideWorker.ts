@@ -2,7 +2,7 @@
 import { loadPyodide, type PyodideAPI } from "pyodide";
 
 // Must match the installed npm "pyodide" package version.
-const PYODIDE_VERSION = "314.0.2";
+const PYODIDE_VERSION = "314.0.3";
 const PYODIDE_CDN_INDEX_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
 
 let pyodide: PyodideAPI | null = null;
