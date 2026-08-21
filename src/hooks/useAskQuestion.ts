@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import type { ParsedCsv } from "../lib/csv";
 import { summarizeResultForHistory } from "../lib/schema";
-import { generateQuery, generateInsight, type Engine, type HistoryTurn } from "../lib/llm";
+import { generateQuery, generateInsight, generateAnswerSummary, type Engine, type HistoryTurn } from "../lib/llm";
 import { runQuery, type QueryResult } from "../lib/duckdb";
 import {
   computeDatasetSummary,
@@ -66,6 +66,9 @@ export interface ConversationTurn {
   attemptsUsed: number;
   /** Phase 29 — a pure display tweak ("make it a bar chart") layered on top of this turn's real result. */
   displayOverride: DisplayOverride | null;
+  /** 1-2 sentence caption generated AFTER the real result exists, from the real numbers only.
+   *  null while pending/unavailable — never blocks rendering the main answer above it. */
+  summary: string | null;
 }
 
 function updateTurn(
@@ -152,6 +155,24 @@ export function useAskQuestion(csvData: ParsedCsv | null, file: File | null) {
             attemptsUsed: merged.attemptsUsed,
             actualProvider: merged.provider ?? provider,
           });
+
+          // Fired and forgotten deliberately: this is a cosmetic 1-2 line
+          // caption, not the answer itself. It runs AFTER the real result is
+          // already on screen (never blocks it) and updates the turn in
+          // place whenever it resolves — including never, if it fails,
+          // since generateAnswerSummary swallows its own errors to null.
+          const engineForSummary = merged.engine;
+          const resultText =
+            engineForSummary === "insights" || engineForSummary === "meta"
+              ? merged.narrative
+              : merged.result
+                ? summarizeResultForHistory(merged.result)
+                : null;
+          if (engineForSummary && resultText && !merged.error) {
+            generateAnswerSummary(question, resultText, merged.provider ?? provider).then((summary) => {
+              if (summary) setTurns((prev) => updateTurn(prev, startTurn.id, { summary }));
+            });
+          }
         }
       }
     },
@@ -200,6 +221,7 @@ export function useAskQuestion(csvData: ParsedCsv | null, file: File | null) {
             question,
             error: null,
             displayOverride: null,
+            summary: null,
             engine: cached.engine,
             sql: cached.sql,
             result: cached.result,
@@ -211,6 +233,17 @@ export function useAskQuestion(csvData: ParsedCsv | null, file: File | null) {
             provider: cached.actualProvider,
           },
         ]);
+        const resultText =
+          cached.engine === "insights" || cached.engine === "meta"
+            ? cached.narrative
+            : cached.result
+              ? summarizeResultForHistory(cached.result)
+              : null;
+        if (resultText) {
+          generateAnswerSummary(question, resultText, cached.actualProvider ?? provider).then((summary) => {
+            if (summary) setTurns((prev) => updateTurn(prev, id, { summary }));
+          });
+        }
         return;
       }
 
@@ -231,6 +264,7 @@ export function useAskQuestion(csvData: ParsedCsv | null, file: File | null) {
         error: null,
         attemptsUsed: 0,
         displayOverride: null,
+        summary: null,
       };
 
       await executeTurn(newTurn, true, null);
@@ -263,6 +297,7 @@ export function useAskQuestion(csvData: ParsedCsv | null, file: File | null) {
         error: null,
         attemptsUsed: 0,
         displayOverride: null,
+        summary: null,
       };
 
       await executeTurn(resetTurn, false, turnId);

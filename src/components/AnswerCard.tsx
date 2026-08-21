@@ -66,7 +66,7 @@ export function AnswerCard({
   selectedProvider,
   onRegenerate,
 }: AnswerCardProps) {
-  const { stage, question, sql, engine, provider, result, narrative, statsSummary, error, attemptsUsed } = turn;
+  const { stage, question, sql, engine, provider, result, narrative, statsSummary, error, attemptsUsed, summary } = turn;
   const [copied, setCopied] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
@@ -267,6 +267,10 @@ export function AnswerCard({
         )}
 
         {result && <ResultTable result={displayedResult ?? result} questionForFilename={question} />}
+
+        {summary && (engine === "sql" || engine === "python") && (
+          <p className="mt-3 text-sm text-[var(--color-text-muted)] italic leading-relaxed">{summary}</p>
+        )}
       </div>
     </div>
   );

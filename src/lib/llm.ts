@@ -146,3 +146,37 @@ export async function generateInsight(
     provider: isProviderId(data.provider) ? data.provider : DEFAULT_PROVIDER,
   };
 }
+
+interface GenerateAnswerSummaryResponse {
+  summary?: string;
+  error?: string;
+  provider?: string;
+}
+
+// Deliberately swallows every failure and returns null instead of throwing.
+// This is a cosmetic caption under an already-successful answer — a flaky
+// provider, a bad JSON parse, or a network hiccup here should never surface
+// as an error to the user or block the real result they already have.
+export async function generateAnswerSummary(
+  question: string,
+  resultSummary: string,
+  provider?: string
+): Promise<string | null> {
+  try {
+    const res = await fetch("/api/generate-answer-summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, resultSummary, provider }),
+    });
+
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) return null;
+
+    const data: GenerateAnswerSummaryResponse = await res.json();
+    if (!res.ok || data.error || !data.summary) return null;
+
+    return data.summary;
+  } catch {
+    return null;
+  }
+}

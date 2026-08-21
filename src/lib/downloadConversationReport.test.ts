@@ -16,6 +16,7 @@ function makeTurn(overrides: Partial<ConversationTurn>): ConversationTurn {
     error: null,
     attemptsUsed: 1,
     displayOverride: null,
+    summary: null,
     ...overrides,
   };
 }
