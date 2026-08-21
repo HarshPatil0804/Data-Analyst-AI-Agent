@@ -99,9 +99,20 @@ Rules when engine is "python" (pandas):
   scalar (number/string). This is required.
 - Only use pandas, numpy, scipy, and Python built-ins. Do not import os, sys, subprocess, socket, or any
   file/network module. Do not use open(), eval(), exec(), or __import__().
-- For z-score/outlier detection, prefer scipy.stats.zscore over hand-writing the (x - mean) / std formula
-  yourself. For linear regression, prefer scipy.stats.linregress over deriving coefficients manually.
-  Tested library functions here are less error-prone than reimplementing the same math inline each time.
+- For outlier detection, do NOT use scipy.stats.zscore or a hand-written (x - mean) / std formula. A
+  standard mean/std z-score is vulnerable to "masking": one sufficiently extreme value inflates the very
+  mean and std used to judge it, which can hide the outlier from itself (this is especially severe in
+  small groups, e.g. n < 10). Instead use a robust MODIFIED z-score based on the median and MAD (median
+  absolute deviation), which extreme values can't drag around the same way:
+    median = series.median()
+    mad = (series - median).abs().median()
+    if mad == 0: mad = (series - median).abs().mean() or 1.0  # guard divide-by-zero when MAD collapses
+    modified_z = 0.6745 * (series - median) / mad
+  Flag |modified_z| > 3.5 as an outlier (the standard Iglewicz & Hoaglin threshold). Apply this per-group
+  when grouping is warranted (see below) — compute median/MAD separately within each group, not globally,
+  or a single group's outlier can still be washed out by a totally different group's scale.
+  For linear regression, prefer scipy.stats.linregress over deriving coefficients manually — that formula
+  doesn't have an equivalent masking failure mode, so the library function is fine there.
 - Keep the code short and focused only on answering the question.
 - Before computing an outlier, average, z-score, or similar statistic on a numeric column, check whether
   the schema has a categorical column (like product, region, category, type) that the numeric column's

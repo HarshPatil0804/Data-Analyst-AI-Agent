@@ -15,10 +15,12 @@ async function ensurePyodide(): Promise<PyodideAPI> {
   // retries from scratch instead of being permanently stuck.
   await instance.loadPackage(["pandas"]);
 
-  // scipy added in Phase 25 so outlier/regression questions can use tested
-  // functions (scipy.stats.zscore, scipy.stats.linregress) instead of the
-  // model hand-rolling that math inline every time — see api/generate-query.ts's
-  // system prompt and Engineering Journal bug #3 for why that matters.
+  // scipy added in Phase 25 so regression questions can use scipy.stats.linregress
+  // instead of the model hand-rolling coefficients inline every time. NOTE: outlier
+  // detection deliberately does NOT use scipy.stats.zscore (mean/std) anymore — see
+  // api/generate-query.ts's system prompt for why (masking: an extreme value inflates
+  // the mean/std used to judge it, hiding itself). Outliers now use a pandas-only
+  // median/MAD modified z-score, so scipy staying optional doesn't affect that path.
   // Deliberately optional: if it fails to load (network hiccup, package
   // temporarily unavailable), Python still works for everything except
   // scipy-specific code — code that tries to import it anyway will hit a
