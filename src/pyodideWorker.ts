@@ -17,10 +17,11 @@ async function ensurePyodide(): Promise<PyodideAPI> {
 
   // scipy added in Phase 25 so regression questions can use scipy.stats.linregress
   // instead of the model hand-rolling coefficients inline every time. NOTE: outlier
-  // detection deliberately does NOT use scipy.stats.zscore (mean/std) anymore — see
-  // api/generate-query.ts's system prompt for why (masking: an extreme value inflates
-  // the mean/std used to judge it, hiding itself). Outliers now use a pandas-only
-  // median/MAD modified z-score, so scipy staying optional doesn't affect that path.
+  // detection deliberately does NOT use scipy at all — see api/generate-query.ts's
+  // system prompt for the history here: mean/std z-score (masking) and median/MAD
+  // z-score (too conservative on small samples, see ENGINEERING_JOURNAL) were both
+  // tried and rejected in favor of plain pandas Tukey IQR fences, so scipy staying
+  // optional doesn't affect the outlier path either way.
   // Deliberately optional: if it fails to load (network hiccup, package
   // temporarily unavailable), Python still works for everything except
   // scipy-specific code — code that tries to import it anyway will hit a

@@ -99,31 +99,36 @@ Rules when engine is "python" (pandas):
   scalar (number/string). This is required.
 - Only use pandas, numpy, scipy, and Python built-ins. Do not import os, sys, subprocess, socket, or any
   file/network module. Do not use open(), eval(), exec(), or __import__().
-- For outlier detection, do NOT use scipy.stats.zscore or a hand-written (x - mean) / std formula. A
-  standard mean/std z-score is vulnerable to "masking": one sufficiently extreme value inflates the very
-  mean and std used to judge it, which can hide the outlier from itself (this is especially severe in
-  small groups, e.g. n < 10). Instead use a robust MODIFIED z-score based on the median and MAD (median
-  absolute deviation), which extreme values can't drag around the same way:
-    median = series.median()
-    mad = (series - median).abs().median()
-    if mad == 0: mad = (series - median).abs().mean() or 1.0  # guard divide-by-zero when MAD collapses
-    modified_z = 0.6745 * (series - median) / mad
-  Flag |modified_z| > 3.5 as an outlier (the standard Iglewicz & Hoaglin threshold). Apply this per-group
-  when grouping is warranted (see below) — compute median/MAD separately within each group, not globally,
-  or a single group's outlier can still be washed out by a totally different group's scale.
+- For outlier detection, use TUKEY IQR FENCES — the same rule boxplots use — not a z-score of any kind:
+    q1 = series.quantile(0.25)
+    q3 = series.quantile(0.75)
+    iqr = q3 - q1
+    lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+    outliers = df[(series < lower) | (series > upper)]
+  Do NOT use scipy.stats.zscore, a hand-written (x - mean) / std formula, or a median/MAD modified
+  z-score. Both mean/std and MAD-based z-scores were tried here and rejected: mean/std is vulnerable to
+  "masking" (one extreme value inflates the very std used to judge it, hiding itself, especially in small
+  groups), and a MAD z-score with the standard 3.5 threshold turned out too conservative on datasets this
+  size (10-30 rows) — it silently misses real outliers a person would obviously flag. IQR fences have
+  correctly caught every real outlier tested here, at every sample size, with no masking failure. Always
+  use k = 1.5 (the standard Tukey multiplier) — do not invent a different multiplier per question.
   For linear regression, prefer scipy.stats.linregress over deriving coefficients manually — that formula
   doesn't have an equivalent masking failure mode, so the library function is fine there.
 - Keep the code short and focused only on answering the question.
-- Before computing an outlier, average, z-score, or similar statistic on a numeric column, check whether
-  the schema has a categorical column (like product, region, category, type) that the numeric column's
+- Before computing an outlier, average, or similar statistic on a numeric column, check whether the schema
+  has a categorical column (like product, region, category, type, department) that the numeric column's
   scale plausibly depends on. If a metric being compared "as one pool" would actually be dominated by
   different underlying scales — e.g. one product being priced very differently from another, so a
-  cross-product revenue comparison flags normal-for-that-product values as outliers just because that
-  product costs more — compute the statistic WITHIN each group (e.g. groupby(...).apply(...) per group,
-  or a z-score computed per group) instead of pooling everything together, unless the question explicitly
-  asks for an overall/global figure ("what's the single highest revenue transaction across everything").
-  When genuinely unsure whether grouping is warranted, prefer grouping by the most relevant categorical
-  column over pooling — a scoped, correct answer beats a technically-computed but misleading one.
+  cross-product comparison flags normal-for-that-product values as outliers just because that product
+  costs more — compute the statistic WITHIN each group instead of pooling, UNLESS the question explicitly
+  asks for an overall/global figure ("what's the single highest value across everything").
+  IMPORTANT sample-size guard: only do this per-group split when EVERY group has at least ~6 rows. IQR
+  quartiles are not meaningful on groups smaller than that (e.g. 3 rows per group literally cannot produce
+  a trustworthy Q1/Q3) — in that case compute the statistic globally across the whole column instead, even
+  though the categorical column exists, and don't invent a workaround to force a per-group answer.
+  When genuinely unsure whether grouping is warranted (and group sizes are large enough), prefer grouping
+  by the most relevant categorical column over pooling — a scoped, correct answer beats a technically-
+  computed but misleading one.
 
 All engines — these rules apply regardless of which one is chosen:
 - If a question asks for a metric that isn't directly derivable from the given columns (e.g. "profit margin"
