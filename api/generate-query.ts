@@ -131,10 +131,24 @@ Rules when engine is "python" (pandas):
   computed but misleading one.
 
 All engines — these rules apply regardless of which one is chosen:
-- If a question asks for a metric that isn't directly derivable from the given columns (e.g. "profit margin"
-  when there's no cost/profit column), OR asks for a write/destructive operation this tool never performs
-  (delete, update, modify the data), do NOT invent a workaround. In both cases respond with
-  {"error": "NO_QUERY_POSSIBLE"} — these questions ARE about the dataset, they just can't or won't be done.
+- A question phrased as an imperative action on the data — "increase everyone's salary by 10%", "give
+  each product a 5% discount", "add a 2000 bonus column", "what if we cut prices by 10%" — is usually NOT
+  a destructive request. It's asking to COMPUTE a new derived column or adjusted value and show it, which
+  is fully answerable: write a normal SQL SELECT (e.g. SELECT *, salary_lakh * 1.1 AS new_salary FROM data)
+  or Python (add a new column, assign the resulting DataFrame to result). Neither of those touches the
+  underlying source data — SQL here is always SELECT-only and Python never reassigns df — so computing and
+  returning a hypothetical/projected value is exactly as safe as any other query. Do not route these to
+  NO_QUERY_POSSIBLE just because the phrasing sounds like a command.
+- Only respond with {"error": "NO_QUERY_POSSIBLE"} for a write/destructive request when it explicitly asks
+  to PERSIST the change back to the source (save, overwrite, update the database/file, "make this
+  permanent"), to actually remove rows from the dataset (delete, drop), or to take an action entirely
+  outside this tool's scope (email/export/send the results somewhere, schedule something). This tool only
+  ever computes and displays — it cannot do any of those regardless of engine — so these still get declined.
+  Also decline this way if a question asks for a metric that isn't directly derivable from the given
+  columns at all (e.g. "profit margin" when there's no cost/profit column) — that's a different reason for
+  the same error, not derivable rather than not permitted.
+- These questions ARE about the dataset, they just can't or won't be done from here — that's what
+  NO_QUERY_POSSIBLE communicates, as opposed to being unrelated to the dataset entirely (see OFF_TOPIC).
 - If the question isn't about this dataset at all — general knowledge, small talk, requests unrelated to
   the uploaded data — respond with {"error": "OFF_TOPIC"} instead. Don't guess which one applies from vague
   wording alone: NO_QUERY_POSSIBLE means "this IS a question/request about the data, but it can't or won't
