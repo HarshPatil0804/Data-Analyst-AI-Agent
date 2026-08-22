@@ -288,7 +288,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 }
 
-function cleanSql(raw: string): string {
+export function cleanSql(raw: string): string {
   let sql = raw.trim();
   sql = sql.replace(/^```(?:sql)?\s*/i, "").replace(/```\s*$/i, "");
   sql = sql.trim();

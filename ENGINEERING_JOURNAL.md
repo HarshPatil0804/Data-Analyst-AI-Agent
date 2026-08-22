@@ -1,6 +1,6 @@
 # Engineering Journal
 
-Five real bugs hit while building this, and how they got found and fixed.
+Twelve real bugs hit while building this, and how they got found and fixed.
 Not a highlight reel — the point of writing this down is that "I built a
 thing that works" and "I can explain why it broke and how I knew the fix
 was right" are different claims, and only the second one is actually
@@ -272,6 +272,175 @@ principle applies to the diagnosis as to the code being diagnosed.
 
 ---
 
+## 9. Pyodide version skew (a caret range and a hardcoded CDN path pointing at two different versions)
+
+**Symptom:** every Python-routed question failed outright with `Pyodide version
+does not match: '314.0.3' <==> '314.0.2'`. Not intermittent — deterministic,
+every single time, before any generated code even ran.
+
+**Root cause:** `package.json` pinned Pyodide with `^314.0.2` — a caret
+range — which let `npm install` resolve and lock `314.0.3` instead
+(confirmed by checking what `package-lock.json` had actually resolved).
+Meanwhile `pyodideWorker.ts` had a hardcoded `PYODIDE_VERSION = "314.0.2"`
+used to build the CDN `indexURL` Pyodide loads its stdlib and packages from.
+The JS runtime bundled from npm was v314.0.3; the CDN path it was told to
+pull supporting files from was pinned to v314.0.2. Pyodide's own internal
+consistency check refuses to boot when these disagree, by design — loading
+a mismatched runtime/stdlib pair would otherwise corrupt state silently, so
+it fails loudly instead.
+
+**Fix:** bumped the hardcoded version string to match the resolved lockfile
+version, and — more importantly — removed the caret from `package.json` so
+a future `npm install` can't silently resolve a different patch version out
+from under the hardcoded string again. The comment already sitting above
+that constant said "must match the installed npm package version" — the
+caret quietly broke the promise that comment was making, without anyone
+touching either line directly.
+
+**Lesson:** a version comment next to a hardcoded string is only actually
+enforced if the *other* end of that promise is pinned too. A caret range on
+a dependency whose exact version has to match something else hardcoded
+elsewhere is an invitation for exactly this bug.
+
+---
+
+## 10. Outlier detection, three tries to get right
+
+**Symptom:** asked "is there any outlier in the data?" against a small
+salary dataset where one employee's salary (₹250L against peers around
+₹30-60L) was an obvious outlier by eye. The tool returned zero rows — no
+outlier found at all, on data where glancing at the table catches it
+instantly.
+
+**Root cause, attempt 1 (mean/std z-score):** the prompt had the model
+compute outliers per-department (a reasonable instinct — different
+departments genuinely sit on different salary scales) using
+`scipy.stats.zscore`, a mean/standard-deviation-based statistic. Within the
+outlier's own small group (n=5), that single extreme value inflated the
+group's own mean and standard deviation so much that its z-score landed
+just under the flagging threshold — the outlier's presence in the very
+statistic used to judge it hid it from itself. This is a textbook case of
+"masking" in robust statistics, not a coding bug; the code ran correctly
+and computed exactly what it was told to.
+
+**Fix, attempt 1 → attempt 2 (median/MAD modified z-score):** switched to a
+statistic that doesn't get dragged around by the point it's judging —
+median and MAD (median absolute deviation) instead of mean and std, with
+the standard Iglewicz & Hoaglin threshold of 3.5. This correctly caught the
+salary outlier. But testing against two other sample datasets (a 20-row
+exam-marks set with one clearly weak score, and a 12-row product-price set)
+showed the same threshold was now *too conservative* on small samples —
+genuine outliers a person would immediately flag came out just under 3.5
+and got silently missed. Traded one failure mode for a different one
+instead of actually fixing it.
+
+**Fix, attempt 2 → attempt 3 (Tukey IQR fences):** switched again, this
+time to the same rule boxplots use — flag anything outside
+`Q1 - 1.5×IQR` to `Q3 + 1.5×IQR`. Verified this by hand against all three
+test datasets before touching the prompt: it correctly caught every real
+outlier, at every sample size tested (10, 12, and 20 rows), with no
+masking regression on the original salary case. Also simpler code than the
+MAD version (no conditional branch needed for a divide-by-zero guard),
+which as a side effect reduced how often the model's generated Python broke
+JSON escaping on longer, branching code.
+
+**Lesson:** "made the answer correct on the failing example" and "made the
+answer correct" are different claims, and the gap between them only shows
+up when you go looking for it with a second and third test case instead of
+stopping at the first green result. Two statistically-reasonable fixes in a
+row both failed in a way only some *other* dataset would reveal.
+
+---
+
+## 11. Treating an imperative sentence as a destructive command
+
+**Symptom:** "increase everyone's salary by 10% and show me the final list"
+was declined outright — "That question doesn't seem answerable from this
+dataset's columns" — even though the tool has always been fully capable of
+computing and returning exactly that (a new derived column), and even
+though nothing about the underlying SQL/Python engines can ever persist a
+change to the source data regardless of how the question is phrased.
+
+**Root cause:** the routing prompt's rule for declining destructive
+requests was written broadly — "asks for a write/destructive operation
+this tool never performs (delete, update, modify the data)" — and the
+model reasonably read "increase everyone's salary" as an UPDATE-style
+command and declined it, with no way to distinguish that from "compute a
+new column showing what a 10% increase would look like." Those are
+architecturally completely different (one mutates stored data, the other
+computes and displays a value), but the prompt's wording only drew a line
+based on how a sentence *sounded*, not on what the tool would actually have
+to do to answer it.
+
+**Fix:** rewrote the rule to explicitly separate the two cases — an
+imperative-sounding question that's really asking for a computed or
+hypothetical value now routes normally to SQL or Python, while only
+requests that explicitly ask to *persist* a change, delete real rows, or
+act outside the tool's scope (email, save, export) still get declined.
+Verified both directions afterward: the raise question now correctly
+returns a `new_salary_lakh` column for every employee, and a genuinely
+destructive phrasing ("permanently update the salaries in the database")
+still declines correctly.
+
+**Lesson:** no new capability or engine was needed here — the SQL layer was
+already SELECT-only and the Python layer already never reassigned the
+source `df`, so both were already incapable of doing real damage regardless
+of how a question was worded. The bug was entirely a classification
+boundary drawn on the wrong signal (sentence mood) instead of the thing
+that actually mattered (does this touch the source data). Worth checking,
+before reaching for a new feature or engine: is this really a missing
+capability, or a badly-drawn line around a capability that's already there?
+
+---
+
+## 12. Three unrelated-looking auth failures that were each a different layer of the same feature
+
+**Symptom:** adding Google login via Supabase failed three separate times
+in a row while wiring up the exact same feature, each with a completely
+different-looking error.
+
+**Failure 1** — `{"message":"No API key found in request"}`, with the
+browser's address bar showing a doubled path:
+`.../rest/v1/auth/v1/authorize`. Root cause: `VITE_SUPABASE_URL` had been
+copied from the wrong field in Supabase's dashboard — the REST endpoint
+(which already ends in `/rest/v1`) instead of the bare project URL. The SDK
+builds its own auth endpoint by appending `/auth/v1/...` onto whatever base
+URL it's given, so a base URL that already had a path on it produced a
+doubled, invalid path. Fix: use the bare project URL with no suffix.
+
+**Failure 2** — login appeared to succeed (Google's account picker,
+redirect back) but the navbar never updated, and the URL sat there showing
+a raw, unconsumed `#access_token=...` fragment. Root cause: the plain
+Supabase client defaults to the *implicit* OAuth flow, which returns a live
+token directly in a URL hash — a flow with well-documented race conditions
+in single-page apps, where the client library's automatic hash-parsing can
+lose against the app's own router mounting. Fix: explicitly configured PKCE
+flow instead, which exchanges a short-lived one-time code rather than ever
+exposing a live token in the URL.
+
+**Failure 3** — after switching to PKCE, the URL correctly showed a
+one-time `?code=...`, but it still sat there unconsumed with the login
+button still showing. Checking the browser console — rather than
+continuing to reason about it from the UI alone — showed the actual cause
+immediately: a Content-Security-Policy header, already in place to lock
+down which domains the app can talk to, only allowlisted the app's own
+origin and the CDN Pyodide loads from. Supabase's domain was never added,
+so the browser silently blocked the network call needed to exchange the
+code for a session, before the request even left. Fix: added Supabase's
+domain to `connect-src`.
+
+**Lesson:** three failures, three different actual root causes, none
+guessable from the symptom alone. The first two got diagnosed correctly by
+reasoning about how the pieces should fit together, but the third one only
+became obvious the moment the browser console was actually opened instead
+of continuing to theorize about race conditions and storage partitioning.
+The console had the exact answer, unambiguously, the whole time — worth
+remembering as a default first step for the *next* mysterious frontend
+integration bug, before spending time reasoning about internals from the
+outside.
+
+---
+
 **Pattern across all five** *(original set — #6, #7, #8 are later additions
 following the same discipline):* none of these were caught by "it works on
 my machine." #1 needed a second locale. #2 needed a second occurrence to
@@ -284,4 +453,11 @@ silently regress on the next prompt change. #7 needed a live deployment —
 not this development environment — actually being used by someone, to
 surface a code path this environment structurally couldn't exercise. #8
 needed a second screenshot to see that the retry loop had been quietly
-masking the real bug instead of fixing it.
+masking the real bug instead of fixing it. #9 needed reading the lockfile's
+*resolved* version, not just the range written in `package.json`. #10
+needed two more datasets before the fix could be trusted, since the first
+"correct" fix and the second "correct" fix were each only tested against
+the case that had just failed. #11 needed noticing that a declined request
+wasn't actually a missing capability at all — just a rule drawing its line
+on the wrong signal. #12 needed the browser console, not more reasoning
+from the outside, to turn a third guess into a one-line fix.
