@@ -48,7 +48,7 @@ export function FileUpload({ onFileSelected, onSampleSelected, isLoading }: File
       <div
         role="button"
         tabIndex={busy ? -1 : 0}
-        aria-label="Upload a CSV file — drop a file here, or press Enter to browse"
+        aria-label="Upload a data file — drop a CSV, Excel, or JSON file here, or press Enter to browse"
         aria-disabled={busy}
         onDragOver={(e) => {
           e.preventDefault();
@@ -72,7 +72,7 @@ export function FileUpload({ onFileSelected, onSampleSelected, isLoading }: File
         <input
           ref={inputRef}
           type="file"
-          accept=".csv"
+          accept=".csv,.xlsx,.xls,.json"
           className="hidden"
           onChange={handleInputChange}
           disabled={busy}
@@ -101,10 +101,10 @@ export function FileUpload({ onFileSelected, onSampleSelected, isLoading }: File
         </div>
 
         <p className="text-lg font-medium text-[var(--color-text)]">
-          {isLoading ? "Reading file…" : "Drop a CSV file here"}
+          {isLoading ? "Reading file…" : "Drop a data file here"}
         </p>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-          or click to browse — up to 25MB, parsed entirely in your browser
+          CSV, Excel, or JSON — or click to browse — up to 25MB, parsed entirely in your browser
         </p>
       </div>
 

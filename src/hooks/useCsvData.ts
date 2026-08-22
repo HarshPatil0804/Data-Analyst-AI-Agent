@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { parseCsvFile, type ParsedCsv } from "../lib/csv";
+import { parseDataFile } from "../lib/dataFile";
+import type { ParsedCsv } from "../lib/csv";
 
 interface UseCsvDataState {
   data: ParsedCsv | null;
@@ -17,7 +18,7 @@ export function useCsvData() {
   const loadFile = useCallback(async (file: File) => {
     setState({ data: null, isLoading: true, error: null });
     try {
-      const parsed = await parseCsvFile(file);
+      const parsed = await parseDataFile(file);
       setState({ data: parsed, isLoading: false, error: null });
     } catch (err) {
       const message =

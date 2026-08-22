@@ -17,7 +17,7 @@ export interface ParsedCsv {
   warnings: string[];
 }
 
-const MAX_ACCEPTED_SIZE_BYTES = 25 * 1024 * 1024; // 25MB — generous for a client-side demo
+export const MAX_ACCEPTED_SIZE_BYTES = 25 * 1024 * 1024; // 25MB — generous for a client-side demo
 const TYPE_SAMPLE_SIZE = 100;
 
 // If a file isn't actually UTF-8 (e.g. saved as Windows-1252/Latin-1 from
@@ -86,6 +86,46 @@ function detectEncodingIssue(rows: Record<string, string>[]): boolean {
   );
 }
 
+/**
+ * Shared by every format's parser (csv/xlsx/json): given a column-name list
+ * and normalized string rows, infers types and builds the warnings list the
+ * same way regardless of where the rows came from. Each format-specific
+ * parser is responsible for its OWN fatal validation (empty file, wrong
+ * shape, etc.) before calling this — this only ever produces a valid
+ * result, never throws.
+ */
+export function buildParsedTable(
+  fileName: string,
+  rawColumns: string[],
+  rows: Record<string, string>[],
+  options: { checkEncoding?: boolean; extraWarnings?: string[] } = {}
+): ParsedCsv {
+  const warnings: string[] = [...(options.extraWarnings ?? [])];
+
+  const columns: ParsedColumn[] = rawColumns.map((name) => ({
+    name,
+    type: inferColumnType(rows.map((row) => row[name])),
+  }));
+
+  const emptyColumns = columns.filter((c) => c.type === "empty");
+  if (emptyColumns.length > 0) {
+    warnings.push(
+      `${emptyColumns.length} column(s) appear to be entirely empty: ${emptyColumns
+        .map((c) => c.name)
+        .join(", ")}.`
+    );
+  }
+
+  if (options.checkEncoding && detectEncodingIssue(rows)) {
+    warnings.push(
+      "Some characters couldn't be read correctly and were replaced with \uFFFD — " +
+        "this file may not be UTF-8 encoded. Try re-saving it as UTF-8 if the data looks garbled."
+    );
+  }
+
+  return { fileName, columns, rows, totalRows: rows.length, warnings };
+}
+
 export function parseCsvFile(file: File): Promise<ParsedCsv> {
   return new Promise((resolve, reject) => {
     try {
@@ -99,7 +139,6 @@ export function parseCsvFile(file: File): Promise<ParsedCsv> {
       header: true,
       skipEmptyLines: "greedy",
       complete: (result) => {
-        const warnings: string[] = [];
         const rawColumns = result.meta.fields ?? [];
 
         if (rawColumns.length === 0 || result.data.length === 0) {
@@ -113,43 +152,22 @@ export function parseCsvFile(file: File): Promise<ParsedCsv> {
 
         // Papa reports row-level issues (mismatched field counts, delimiter guesses, etc)
         // without necessarily failing the whole parse — surface them, don't block on them.
+        const extraWarnings: string[] = [];
         if (result.errors.length > 0) {
           const distinctReasons = new Set(result.errors.map((e) => e.code));
-          warnings.push(
+          extraWarnings.push(
             `${result.errors.length} row(s) had formatting issues (${Array.from(
               distinctReasons
             ).join(", ")}) and may be incomplete.`
           );
         }
 
-        const columns: ParsedColumn[] = rawColumns.map((name) => ({
-          name,
-          type: inferColumnType(result.data.map((row) => row[name])),
-        }));
-
-        const emptyColumns = columns.filter((c) => c.type === "empty");
-        if (emptyColumns.length > 0) {
-          warnings.push(
-            `${emptyColumns.length} column(s) appear to be entirely empty: ${emptyColumns
-              .map((c) => c.name)
-              .join(", ")}.`
-          );
-        }
-
-        if (detectEncodingIssue(result.data)) {
-          warnings.push(
-            "Some characters couldn't be read correctly and were replaced with \uFFFD — " +
-              "this file may not be UTF-8 encoded. Try re-saving it as UTF-8 if the data looks garbled."
-          );
-        }
-
-        resolve({
-          fileName: file.name,
-          columns,
-          rows: result.data,
-          totalRows: result.data.length,
-          warnings,
-        });
+        resolve(
+          buildParsedTable(file.name, rawColumns, result.data, {
+            checkEncoding: true,
+            extraWarnings,
+          })
+        );
       },
       error: (err: Error) => {
         reject(new CsvValidationError(`Failed to parse "${file.name}": ${err.message}`));
