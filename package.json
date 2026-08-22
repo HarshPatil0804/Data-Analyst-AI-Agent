@@ -34,6 +34,8 @@
     "@duckdb/duckdb-wasm": "^1.33.1-dev57.0",
     "@supabase/supabase-js": "^2.112.3",
     "@tailwindcss/vite": "^4.3.2",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.2",
     "papaparse": "^5.5.4",
     "pyodide": "314.0.3",
     "react": "^19.2.7",

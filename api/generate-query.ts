@@ -1,5 +1,6 @@
 import { DEFAULT_PROVIDER, isProviderId, ProviderError, callWithFallback, type ProviderId } from "./providers";
 import { jsonResponse, log, parseModelJson } from "./_lib/util";
+import { checkRateLimit } from "./_lib/rateLimit";
 
 export const config = { runtime: "edge" };
 
@@ -173,6 +174,11 @@ interface ParsedModelResponse {
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== "POST") {
     return jsonResponse({ error: "Method not allowed." }, 405);
+  }
+
+  const { limited } = await checkRateLimit(req);
+  if (limited) {
+    return jsonResponse({ error: "Too many requests. Please wait a moment and try again." }, 429);
   }
 
   let body: RequestBody;
