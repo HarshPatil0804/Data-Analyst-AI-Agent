@@ -2,6 +2,8 @@ import { useCallback, useState } from "react";
 import type { ParsedCsv } from "../lib/csv";
 import { summarizeResultForHistory } from "../lib/schema";
 import { generateQuery, generateInsight, generateAnswerSummary, type Engine, type HistoryTurn } from "../lib/llm";
+import { useAuth } from "../contexts/AuthContext";
+import { saveHistoryEntry } from "../lib/history";
 import { runQuery, type QueryResult } from "../lib/duckdb";
 import {
   computeDatasetSummary,
@@ -84,6 +86,7 @@ export function useAskQuestion(csvData: ParsedCsv | null, file: File | null) {
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [provider, setProviderState] = useState<ProviderId>(loadStoredProvider);
   const [cache] = useState(createAnswerCache);
+  const { user } = useAuth();
 
   const setProvider = useCallback((next: ProviderId) => {
     setProviderState(next);
@@ -171,6 +174,24 @@ export function useAskQuestion(csvData: ParsedCsv | null, file: File | null) {
           if (engineForSummary && resultText && !merged.error) {
             generateAnswerSummary(question, resultText, merged.provider ?? provider).then((summary) => {
               if (summary) setTurns((prev) => updateTurn(prev, startTurn.id, { summary }));
+
+              // History save waits for the caption on purpose — one write
+              // with the final summary already attached beats two writes
+              // (one immediate, one to patch the summary in afterward).
+              // Silently does nothing if the user isn't logged in or
+              // Supabase isn't configured — same fail-soft shape as the
+              // summary call right above it.
+              if (user) {
+                saveHistoryEntry({
+                  userId: user.id,
+                  datasetName: file?.name ?? "unknown dataset",
+                  question,
+                  engine: engineForSummary,
+                  code: merged.sql,
+                  resultSummary: resultText,
+                  answerSummary: summary,
+                });
+              }
             });
           }
         }
@@ -242,6 +263,17 @@ export function useAskQuestion(csvData: ParsedCsv | null, file: File | null) {
         if (resultText) {
           generateAnswerSummary(question, resultText, cached.actualProvider ?? provider).then((summary) => {
             if (summary) setTurns((prev) => updateTurn(prev, id, { summary }));
+            if (user) {
+              saveHistoryEntry({
+                userId: user.id,
+                datasetName: file?.name ?? "unknown dataset",
+                question,
+                engine: cached.engine,
+                code: cached.sql,
+                resultSummary: resultText,
+                answerSummary: summary,
+              });
+            }
           });
         }
         return;

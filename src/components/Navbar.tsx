@@ -1,4 +1,7 @@
+import { Link } from "react-router-dom";
 import { ThemeToggle } from "./ThemeToggle";
+import { useAuth } from "../contexts/AuthContext";
+import { isAuthConfigured } from "../lib/supabase";
 
 const GITHUB_URL = "https://github.com/Zephyrex21/ai-data-analyst-agent";
 
@@ -12,6 +15,44 @@ const HOME_NAV_LINKS = [
   { label: "Architecture", id: "architecture" },
   { label: "Try Demo", id: "tool" },
 ];
+
+function AuthControl() {
+  const { user, loading, signInWithGoogle, signOut } = useAuth();
+
+  // Not configured at all (no env vars set) — the login button doesn't
+  // exist, rather than existing and failing when clicked. Anonymous use
+  // stays the fully-working default either way.
+  if (!isAuthConfigured || loading) return null;
+
+  if (!user) {
+    return (
+      <button
+        onClick={signInWithGoogle}
+        className="clay clay-pressable px-3 py-1.5 text-xs font-medium text-[var(--color-text)]"
+      >
+        Log in
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Link
+        to="/history"
+        className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-accent)] transition-colors"
+      >
+        History
+      </Link>
+      <button
+        onClick={signOut}
+        title={user.email ?? "Sign out"}
+        className="clay clay-pressable px-3 py-1.5 text-xs font-medium text-[var(--color-text)]"
+      >
+        Sign out
+      </button>
+    </div>
+  );
+}
 
 export function Navbar({ onNavigate, variant }: NavbarProps) {
   const navLinks = variant === "home" ? HOME_NAV_LINKS : [{ label: "← Home", id: "top" }];
@@ -39,6 +80,7 @@ export function Navbar({ onNavigate, variant }: NavbarProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          <AuthControl />
           <a
             href={GITHUB_URL}
             target="_blank"
