@@ -19,6 +19,7 @@ import { runQueryWithRetries, type OrchestratorStage } from "../lib/queryOrchest
 import { DEFAULT_PROVIDER, isProviderId, type ProviderId } from "../lib/providers";
 import { createAnswerCache } from "../lib/answerCache";
 import { parseChartTweak, type ChartTypeOverride, type SortOverride } from "../lib/chartTweaks";
+import { useAuth } from "../contexts/AuthContext";
 
 export type AskStage = OrchestratorStage;
 

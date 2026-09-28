@@ -1,11 +1,11 @@
 # AI Data Analyst Agent
 
 [![CI](https://github.com/HarshPatil0804/Data-Analyst-AI-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/HarshPatil0804/Data-Analyst-AI-Agent/actions/workflows/ci.yml)
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Online-success?style=flat&logo=vercel)](https://ai-data-analyst-agent-one.vercel.app/)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Deploy%20on%20Vercel-blue?style=flat&logo=vercel)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FHarshPatil0804%2FData-Analyst-AI-Agent)
 ![tests](https://img.shields.io/badge/tests-208%20passing-brightgreen)
 ![zero server cost](https://img.shields.io/badge/server%20cost-%240-blue)
 
-> 🚀 **Live Application**: **[Try it live here → https://ai-data-analyst-agent-one.vercel.app/](https://ai-data-analyst-agent-one.vercel.app/)** *(Loads an instant 1,440-row dataset with one click — no file upload or login required!)*
+> 🚀 **Live Demo**: [https://data-analyst-ai-agent-nu.vercel.app](https://data-analyst-ai-agent-nu.vercel.app)
 
 Upload a CSV, Excel (.xlsx), or JSON file, ask questions about it in plain English, and get a real, verified, executed answer back — not a guess.
 
