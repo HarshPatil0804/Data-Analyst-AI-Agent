@@ -1,4 +1,4 @@
-const GITHUB_URL = "https://github.com/Zephyrex21/ai-data-analyst-agent";
+const GITHUB_URL = "https://github.com/HarshPatil0804/Data-Analyst-AI-Agent";
 
 interface FooterProps {
   onBackToTop: () => void;
@@ -10,12 +10,12 @@ export function Footer({ onBackToTop }: FooterProps) {
       <p className="text-sm text-[var(--color-text-muted)]">
         Built by{" "}
         <a
-          href="https://github.com/Zephyrex21"
+          href="https://github.com/HarshPatil0804"
           target="_blank"
           rel="noopener noreferrer"
           className="font-medium text-[var(--color-accent)] hover:underline"
         >
-          Saurabh
+          Harsh Patil
         </a>{" "}
         — zero-cost, client-side, self-correcting.
       </p>

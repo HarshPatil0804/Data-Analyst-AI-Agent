@@ -62,6 +62,8 @@ export interface ConversationTurn {
   engine: Engine | null;
   provider: ProviderId;
   result: QueryResult | null;
+  explanation?: string | null;
+  chart?: ChartConfig | null;
   narrative: string | null;
   statsSummary: string | null;
   error: string | null;
@@ -291,6 +293,8 @@ export function useAskQuestion(csvData: ParsedCsv | null, file: File | null) {
         engine: null,
         provider,
         result: null,
+        explanation: null,
+        chart: null,
         narrative: null,
         statsSummary: null,
         error: null,

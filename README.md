@@ -1,11 +1,9 @@
 # AI Data Analyst Agent
 
-[![CI](https://github.com/Zephyrex21/ai-data-analyst-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Zephyrex21/ai-data-analyst-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/HarshPatil0804/Data-Analyst-AI-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/HarshPatil0804/Data-Analyst-AI-Agent/actions/workflows/ci.yml)
 ![tests](https://img.shields.io/badge/tests-208%20passing-brightgreen)
 ![zero server cost](https://img.shields.io/badge/server%20cost-%240-blue)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-
-> Badge repo path assumes `Zephyrex21/ai-data-analyst-agent` — update if the actual GitHub repo name differs.
 
 Upload a CSV, ask questions about it in plain English, get a real, verified, executed answer back — not a guess. **[Try it live →](https://ai-data-analyst-agent-one.vercel.app/)** (loads a sample dataset with one click, no upload required).
 

@@ -13,11 +13,11 @@
     "ai-agent",
     "csv"
   ],
-  "author": "Saurabh",
+  "author": "Harsh Patil",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Zephyrex21/ai-data-analyst-agent.git"
+    "url": "https://github.com/HarshPatil0804/Data-Analyst-AI-Agent.git"
   },
   "homepage": "https://ai-data-analyst-agent-one.vercel.app/",
   "type": "module",
@@ -36,6 +36,8 @@
     "@tailwindcss/vite": "^4.3.2",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.2",
+    "echarts": "^5.6.0",
+    "echarts-for-react": "^3.0.2",
     "papaparse": "^5.5.4",
     "pyodide": "314.0.3",
     "react": "^19.2.7",

@@ -6,6 +6,7 @@ import { chooseChartType, isSingleScalar, type ChartSpec } from "../lib/chartSel
 import { downloadSvgAsPng } from "../lib/downloadChartPng";
 import { BigNumberDisplay } from "./BigNumberDisplay";
 import { ResultTable } from "./ResultTable";
+import { ChartViewer } from "./ChartViewer";
 
 // Recharts is a sizeable dependency only needed once a chart-worthy result
 // actually appears — most single-answer/table-only questions never need it,
@@ -219,10 +220,23 @@ export function AnswerCard({
           </div>
         )}
 
-        {devMode && sql && (
+        {/* Visual Chart Section (ECharts Smart Charting) */}
+        {result && (
+          <ChartViewer
+            chart={turn.chart}
+            result={displayedResult ?? result}
+            explanation={turn.explanation}
+            onPinToDashboard={(pinData) => {
+              console.log("Chart pinned to dashboard:", pinData);
+            }}
+          />
+        )}
+
+        {/* Collapsible Progressive Reveal Query Code Section */}
+        {sql && (
           <details className="mb-4 group">
-            <summary className="text-xs text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-text)] select-none">
-              Show code ({engine === "python" ? "Python" : "SQL"})
+            <summary className="text-xs font-semibold text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-accent)] select-none flex items-center gap-1.5 py-1">
+              <span>⚡ View Generated {engine === "python" ? "Python Code" : "SQL Query"}</span>
             </summary>
             <div className="relative mt-2">
               <pre className="clay-inset p-3 pr-16 text-xs text-[var(--color-text)] whitespace-pre-wrap font-mono overflow-x-auto">
@@ -238,34 +252,7 @@ export function AnswerCard({
           </details>
         )}
 
-        {result && showBigNumber && (
-          <div className="mb-4">
-            <BigNumberDisplay result={result} />
-          </div>
-        )}
-
-        {result && !showBigNumber && chartSpec && !forceTable && (
-          <div className="mb-4">
-            <div className="flex justify-end mb-1">
-              <button
-                onClick={handleExportPng}
-                className="text-xs font-medium text-[var(--color-accent)] hover:underline"
-              >
-                Download chart as PNG
-              </button>
-            </div>
-            <div ref={chartContainerRef}>
-              <Suspense
-                fallback={
-                  <div className="h-[320px] rounded-[28px] bg-[var(--color-surface-muted)] animate-pulse" />
-                }
-              >
-                <ResultChart spec={chartSpec} result={displayedResult ?? result} />
-              </Suspense>
-            </div>
-          </div>
-        )}
-
+        {/* Raw Data Table */}
         {result && <ResultTable result={displayedResult ?? result} questionForFilename={question} />}
 
         {summary && (engine === "sql" || engine === "python") && (

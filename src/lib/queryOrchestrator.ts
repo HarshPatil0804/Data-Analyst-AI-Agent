@@ -6,6 +6,8 @@ import type { Engine, HistoryTurn, PreviousAttempt } from "./llm";
 import type { QueryResult } from "./duckdb";
 import type { ProviderId } from "./providers";
 
+import type { ChartConfig } from "./llm";
+
 export type OrchestratorStage =
   | "generating-sql"
   | "validating"
@@ -19,6 +21,8 @@ export interface OrchestratorUpdate {
   stage: OrchestratorStage;
   sql?: string;
   engine?: Engine;
+  explanation?: string;
+  chart?: ChartConfig | null;
   /** Which provider actually answered this step — may change between the routing call and (for insights) the narration call if server-side fallback (Phase 30) kicked in on either. */
   provider?: ProviderId;
   result?: QueryResult;
@@ -34,7 +38,7 @@ export interface OrchestratorDeps {
     schemaDescription: string,
     previousAttempt: PreviousAttempt | null,
     history: HistoryTurn[]
-  ) => Promise<{ engine: Engine; code: string; provider: ProviderId }>;
+  ) => Promise<{ engine: Engine; code: string; explanation?: string; chart?: ChartConfig | null; provider: ProviderId }>;
   runSql: (sql: string) => Promise<QueryResult>;
   runPython: (code: string) => Promise<QueryResult>;
   isDataFrameLoaded: () => boolean;
@@ -75,11 +79,15 @@ export async function* runQueryWithRetries(
 
     let engine: Engine;
     let code: string;
+    let explanation: string | undefined;
+    let chart: ChartConfig | null | undefined;
     let routingProvider: ProviderId;
     try {
       const generated = await deps.generateQuery(question, schemaDescription, previousAttempt, history);
       engine = generated.engine;
       code = generated.code;
+      explanation = generated.explanation;
+      chart = generated.chart;
       routingProvider = generated.provider;
     } catch (err) {
       // A failure to even reach the LLM isn't something retrying will fix —
@@ -89,7 +97,7 @@ export async function* runQueryWithRetries(
       return;
     }
 
-    yield { stage: "validating", sql: code, engine, provider: routingProvider };
+    yield { stage: "validating", sql: code, engine, explanation, chart, provider: routingProvider };
 
     if (engine === "meta") {
       // Fully synchronous and local — nothing to await, nothing that can fail.

@@ -1,6 +1,8 @@
 import type { AsyncDuckDB } from "@duckdb/duckdb-wasm";
 import { DataType } from "apache-arrow";
 import type { Field } from "apache-arrow";
+import Papa from "papaparse";
+import { parseDataFile } from "./dataFile";
 
 export interface QueryResult {
   columns: string[];
@@ -63,14 +65,29 @@ export async function loadCsvAsTable(file: File, tableName: string): Promise<voi
 
   const conn = await db.connect();
   try {
+    // 1st attempt: DuckDB native read with resilient parameters
     await conn.query(
       `CREATE OR REPLACE TABLE ${quoteIdent(tableName)} AS
-       SELECT * FROM read_csv_auto('${virtualFileName}', header=true, sample_size=-1)`
+       SELECT * FROM read_csv_auto('${virtualFileName}', header=true, ignore_errors=true, null_padding=true)`
     );
-  } catch (err) {
-    throw new SqlExecutionError(
-      `DuckDB couldn't load this CSV: ${err instanceof Error ? err.message : String(err)}`
-    );
+  } catch (primaryErr) {
+    try {
+      // 2nd attempt: Resilient fallback — parse via app's dataFile parser (PapaParse/XLSX/JSON)
+      // which auto-detects delimiters (;, \t, |), quotes, and encodings, then unparse to standard CSV.
+      const parsed = await parseDataFile(file);
+      const cleanCsvText = Papa.unparse(parsed.rows);
+      const cleanVirtualFileName = `${tableName}_clean.csv`;
+
+      await db.registerFileText(cleanVirtualFileName, cleanCsvText);
+      await conn.query(
+        `CREATE OR REPLACE TABLE ${quoteIdent(tableName)} AS
+         SELECT * FROM read_csv_auto('${cleanVirtualFileName}', header=true, ignore_errors=true, null_padding=true)`
+      );
+    } catch (fallbackErr) {
+      throw new SqlExecutionError(
+        `DuckDB couldn't load this CSV: ${primaryErr instanceof Error ? primaryErr.message : String(primaryErr)}`
+      );
+    }
   } finally {
     await conn.close();
   }

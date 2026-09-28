@@ -3,7 +3,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { useAuth } from "../contexts/AuthContext";
 import { isAuthConfigured } from "../lib/supabase";
 
-const GITHUB_URL = "https://github.com/Zephyrex21/ai-data-analyst-agent";
+const GITHUB_URL = "https://github.com/HarshPatil0804/Data-Analyst-AI-Agent";
 
 interface NavbarProps {
   onNavigate: (id: string) => void;

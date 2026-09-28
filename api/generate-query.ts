@@ -62,9 +62,9 @@ not for a passing "hi" or "thanks".
 
 Respond with ONLY a single JSON object, no markdown fences, no explanation outside the JSON, in exactly
 this shape:
-{"engine": "sql", "code": "..."}
+{"engine": "sql", "code": "...", "explanation": "Brief 1-sentence insight", "chart": {"type": "bar" | "line" | "pie" | "scatter" | "kpi" | "none", "title": "Chart Title", "xAxis": "column_name", "yAxis": "column_name"}}
 or
-{"engine": "python", "code": "..."}
+{"engine": "python", "code": "...", "explanation": "Brief 1-sentence insight", "chart": {"type": "bar" | "line" | "pie" | "scatter" | "kpi" | "none", "title": "Chart Title", "xAxis": "column_name", "yAxis": "column_name"}}
 or
 {"engine": "insights"}
 or
@@ -75,6 +75,14 @@ derivable from these columns (e.g. "profit margin" with no cost column):
 or, if the question is NOT about this dataset at all (small talk, general knowledge, requests unrelated
 to the uploaded data, coding help unrelated to this schema, etc.):
 {"error": "OFF_TOPIC"}
+
+Chart Selection Rules:
+- "bar": categorical comparisons (e.g. sum/avg per category or region). Set xAxis to category column, yAxis to metric.
+- "line": time-series trends or ordered dates. Set xAxis to date/time column, yAxis to metric.
+- "pie": proportion/percentage breakdown with <= 6 categories. Set xAxis to category column, yAxis to metric.
+- "scatter": 2D correlations between two continuous numeric variables. Set xAxis to 1st metric, yAxis to 2nd metric.
+- "kpi": single scalar summary value (e.g. single number result like total count or total revenue).
+- "none": multi-column raw list/unaggregated table where no 2D chart fits.
 
 The "code" value must be valid inside a JSON string: escape every newline as \n (never a literal line
 break) and every double quote as \\". This matters most for "python" code, which is naturally multi-line —
@@ -271,7 +279,16 @@ export default async function handler(req: Request): Promise<Response> {
 
     const code = parsed.engine === "sql" ? cleanSql(parsed.code) : parsed.code.trim();
 
-    return jsonResponse({ engine: parsed.engine, code, provider: providerUsed }, 200);
+    return jsonResponse(
+      {
+        engine: parsed.engine,
+        code,
+        explanation: parsed.explanation ?? "",
+        chart: parsed.chart ?? null,
+        provider: providerUsed,
+      },
+      200
+    );
   } catch (err) {
     if (err instanceof ProviderError) {
       log("all_providers_failed", { preferredProvider, status: err.status });

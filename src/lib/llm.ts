@@ -17,9 +17,18 @@ export interface HistoryTurn {
   resultSummary: string;
 }
 
+export interface ChartConfig {
+  type: "bar" | "line" | "pie" | "scatter" | "kpi" | "none";
+  title: string;
+  xAxis?: string;
+  yAxis?: string;
+}
+
 export interface GeneratedQuery {
   engine: Engine;
   code: string;
+  explanation?: string;
+  chart?: ChartConfig | null;
   /** Which provider actually answered — may differ from what was requested if server-side fallback (Phase 30) kicked in. */
   provider: ProviderId;
 }
@@ -27,6 +36,8 @@ export interface GeneratedQuery {
 interface GenerateQueryResponse {
   engine?: string;
   code?: string;
+  explanation?: string;
+  chart?: ChartConfig | null;
   error?: string;
   provider?: string;
 }
@@ -87,6 +98,8 @@ export async function generateQuery(
   return {
     engine: data.engine,
     code: data.code ?? "",
+    explanation: data.explanation,
+    chart: data.chart ?? null,
     provider: isProviderId(data.provider) ? data.provider : DEFAULT_PROVIDER,
   };
 }
