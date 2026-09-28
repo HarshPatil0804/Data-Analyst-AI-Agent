@@ -1,8 +1,6 @@
 import { useCallback, useState } from "react";
 import type { ParsedCsv } from "../lib/csv";
-import { summarizeResultForHistory } from "../lib/schema";
-import { generateQuery, generateInsight, generateAnswerSummary, type Engine, type HistoryTurn } from "../lib/llm";
-import { useAuth } from "../contexts/AuthContext";
+import { generateQuery, generateInsight, generateAnswerSummary, type Engine, type HistoryTurn, type ChartConfig } from "../lib/llm";
 import { saveHistoryEntry } from "../lib/history";
 import { runQuery, type QueryResult } from "../lib/duckdb";
 import {

@@ -1,19 +1,10 @@
-import { lazy, Suspense, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { AskStage, ConversationTurn } from "../hooks/useAskQuestion";
 import type { Engine } from "../lib/llm";
 import { PROVIDER_OPTIONS, type ProviderId } from "../lib/providers";
-import { chooseChartType, isSingleScalar, type ChartSpec } from "../lib/chartSelection";
-import { downloadSvgAsPng } from "../lib/downloadChartPng";
-import { BigNumberDisplay } from "./BigNumberDisplay";
+import { chooseChartType } from "../lib/chartSelection";
 import { ResultTable } from "./ResultTable";
 import { ChartViewer } from "./ChartViewer";
-
-// Recharts is a sizeable dependency only needed once a chart-worthy result
-// actually appears — most single-answer/table-only questions never need it,
-// so it shouldn't be part of the initial page bundle everyone downloads.
-const ResultChart = lazy(() =>
-  import("./ResultChart").then((m) => ({ default: m.ResultChart }))
-);
 
 interface AnswerCardProps {
   turn: ConversationTurn;
@@ -49,16 +40,6 @@ const ENGINE_LABELS: Record<Engine, string> = {
   meta: "Info",
 };
 
-/** Applies a Phase 29 display override on top of the chart chooseChartType() would pick by itself. */
-function applyChartOverride(
-  base: ChartSpec | null,
-  override: ConversationTurn["displayOverride"]
-): { spec: ChartSpec | null; forceTable: boolean } {
-  if (!base || !override?.chartType) return { spec: base, forceTable: false };
-  if (override.chartType === "table") return { spec: base, forceTable: true };
-  return { spec: { ...base, type: override.chartType }, forceTable: false };
-}
-
 export function AnswerCard({
   turn,
   number,
@@ -69,7 +50,6 @@ export function AnswerCard({
 }: AnswerCardProps) {
   const { stage, question, sql, engine, provider, result, narrative, statsSummary, error, attemptsUsed, summary } = turn;
   const [copied, setCopied] = useState(false);
-  const chartContainerRef = useRef<HTMLDivElement>(null);
 
   const isBusy =
     stage === "generating-sql" ||
@@ -78,9 +58,6 @@ export function AnswerCard({
     stage === "computing-stats" ||
     stage === "running-query";
 
-  const rawChartSpec = result ? chooseChartType(result) : null;
-  const { spec: chartSpec, forceTable } = applyChartOverride(rawChartSpec, turn.displayOverride);
-  const showBigNumber = result ? isSingleScalar(result) : false;
   const providerLabel = PROVIDER_OPTIONS.find((p) => p.id === provider)?.label ?? provider;
   const usedFallback = stage === "done" && provider !== selectedProvider;
 
@@ -89,7 +66,9 @@ export function AnswerCard({
   // multi-column results there's no unambiguous "the number" to sort by,
   // so the sort override is silently a no-op rather than guessing a column.
   const displayResult = useMemo(() => {
-    if (!result || !turn.displayOverride?.sort || !rawChartSpec) return result;
+    if (!result || !turn.displayOverride?.sort) return result;
+    const rawChartSpec = chooseChartType(result);
+    if (!rawChartSpec) return result;
     const key = rawChartSpec.valueKey;
     const sorted = [...result.rows].sort((a, b) => {
       const av = Number(a[key]);
@@ -97,7 +76,7 @@ export function AnswerCard({
       return turn.displayOverride!.sort === "asc" ? av - bv : bv - av;
     });
     return { ...result, rows: sorted };
-  }, [result, turn.displayOverride, rawChartSpec]);
+  }, [result, turn.displayOverride]);
 
   async function handleCopyCode() {
     if (!sql) return;
@@ -108,16 +87,6 @@ export function AnswerCard({
     } catch {
       // Clipboard access can fail in locked-down contexts — silently no-op
       // rather than showing an error for a non-critical convenience action.
-    }
-  }
-
-  async function handleExportPng() {
-    const svg = chartContainerRef.current?.querySelector("svg");
-    if (!svg) return;
-    try {
-      await downloadSvgAsPng(svg, question);
-    } catch {
-      // Best-effort — chart export failing shouldn't feel like a broken app.
     }
   }
 
@@ -234,7 +203,7 @@ export function AnswerCard({
 
         {/* Collapsible Progressive Reveal Query Code Section */}
         {sql && (
-          <details className="mb-4 group">
+          <details className="mb-4 group" open={devMode}>
             <summary className="text-xs font-semibold text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-accent)] select-none flex items-center gap-1.5 py-1">
               <span>⚡ View Generated {engine === "python" ? "Python Code" : "SQL Query"}</span>
             </summary>

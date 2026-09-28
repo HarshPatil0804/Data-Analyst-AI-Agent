@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import type { ChartConfig } from "../lib/llm";
 import type { QueryResult } from "../lib/duckdb";
@@ -253,8 +253,9 @@ export function ChartViewer({
   function handlePin() {
     setIsPinned(true);
     if (onPinToDashboard) {
+      const fallbackType = activeType === "table" ? "none" : activeType;
       onPinToDashboard({
-        chart: chart || { type: activeType, title: `${yAxisKey} by ${xAxisKey}`, xAxis: xAxisKey, yAxis: yAxisKey },
+        chart: chart || { type: fallbackType, title: `${yAxisKey} by ${xAxisKey}`, xAxis: xAxisKey, yAxis: yAxisKey },
         result,
       });
     }
