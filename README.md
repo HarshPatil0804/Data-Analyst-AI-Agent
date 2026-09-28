@@ -4,46 +4,53 @@
 ![tests](https://img.shields.io/badge/tests-208%20passing-brightgreen)
 ![zero server cost](https://img.shields.io/badge/server%20cost-%240-blue)
 
-Upload a CSV, ask questions about it in plain English, get a real, verified, executed answer back — not a guess. **[Try it live →](https://ai-data-analyst-agent-one.vercel.app/)** (loads a sample dataset with one click, no upload required).
+Upload a CSV, Excel (.xlsx), or JSON file, ask questions about it in plain English, and get a real, verified, executed answer back — not a guess. Loads a sample dataset with one click, no upload required.
 
-**Data privacy, in one line:** your CSV never leaves your browser — DuckDB and Python both run client-side; the only thing that touches a server is the plain-text question itself, sent to whichever model provider actually answers (Groq, Gemini, Mistral, Cerebras, or Cohere — see below) to generate query code (never your data).
+**Data privacy, in one line:** your data never leaves your browser — DuckDB and Python both run client-side; the only thing sent to a server is the plain-text question itself, forwarded to whichever model provider generates query code (Groq, Gemini, Mistral, Cerebras, or Cohere), never your raw dataset.
 
-## The problem this solves
+## The Problem This Solves
 
-Most "AI + your data" demos are LLM chat wrappers: the model reads a sample of your rows and generates plausible-sounding prose. It's confident, and it's frequently wrong — there's no execution, no verification, nothing stopping it from inventing a number that looks right.
+Most "AI + your data" demos are LLM chat wrappers: the model reads a sample of your rows and generates plausible-sounding prose. It's confident, but frequently wrong — there's no code execution, no verification, and nothing stopping it from hallucinating figures that sound convincing.
 
-This project takes a different approach: the LLM never gets to just answer directly. For anything computable, it writes **SQL or Python**, that code gets **validated** against the real schema and a safety layer, then it's **actually executed** against the real data, and the real result is what gets shown. If the code is unsafe, hallucinates a column, or fails to run, the system **retries with the error fed back to the model** — up to 3 attempts — before giving up honestly. For genuinely open-ended questions ("summarize this dataset," "what stands out") there's an **insights engine** that runs a single batched DuckDB query for every column's real min/max/avg/stddev plus pairwise correlations between numeric columns (scoped to just the columns the question actually names, when it names any), then has the model narrate *only* those real numbers — structurally unable to invent a figure, same guarantee as SQL/Python, just phrased in prose. For questions about the dataset's *structure* rather than its values ("what columns do you have," "what can I ask you") there's a fourth **meta engine** that needs no LLM call at all — it's answered directly, instantly, and for free from schema facts already known client-side, with a cheap local heuristic to lead with the column list vs. the capability rundown depending on which the question actually seems to want, plus a real example row for concreteness. And if a question isn't about the dataset at all, the router says so honestly instead of chatting — that decline is deliberately worded differently from "this metric doesn't exist," so the two failure modes never look the same. Every answer shows a badge for which engine and which model provider produced it, and toggling **Dev Mode** reveals the exact generated code behind any SQL/Python answer.
+This project takes a deterministic execution approach:
+- For computable questions, the LLM writes **SQL or Python**. That code is **validated** against the real schema and an AST/heuristic safety layer, then **executed directly** against the data, displaying only verified results.
+- If code is unsafe, hallucinates nonexistent columns, or errors during runtime, the system **retries with full error context fed back to the model** (up to 3 attempts).
+- For open-ended questions (*"summarize this dataset"*, *"what stands out"*), an **insights engine** runs batched DuckDB queries for real summary metrics (min/max/avg/stddev and correlations), then has the model narrate *only* those real numbers.
+- For structural inquiries (*"what columns do you have"*, *"what can I ask you"*), a **meta engine** answers instantly and for free from schema facts already known in the browser, requiring no LLM call.
+- For unrelated questions, the agent declines honestly instead of fabricating responses.
+
+Every answer displays a badge for the active engine and model provider, and toggling **Dev Mode** reveals the exact generated SQL/Python code.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    U["CSV Upload<br/>(browser only)"] --> P["Parse + type-infer<br/>(papaparse)"]
-    P --> D["DuckDB-WASM<br/>(in-browser SQL engine)"]
+    U["Data Upload<br/>(CSV / XLSX / JSON)"] --> P["Client Parse & Type Infer<br/>(PapaParse / SheetJS)"]
+    P --> D["DuckDB-WASM<br/>(In-Browser SQL Engine)"]
 
-    Q["Question<br/>(plain English)"] --> E["Edge Function<br/>/api/generate-query"]
-    E --> G["Preferred provider, then automatic<br/>fallback through up to 4 more<br/>(Groq → Gemini → Mistral → Cerebras → Cohere)"]
-    G -->|"SQL, Python, insights, or meta"| V{"Validator"}
+    Q["Question<br/>(Plain English)"] --> E["Edge Function<br/>/api/generate-query"]
+    E --> G["Model Provider Cascade<br/>(Groq → Gemini → Mistral → Cerebras → Cohere)"]
+    G -->|"SQL, Python, insights, or meta"| V{"Safety Validator"}
 
     V -->|"SQL"| D
-    V -->|"Python"| PY["Pyodide + pandas<br/>(Web Worker)"]
-    V -->|"insights"| STAT["Real stat queries via DuckDB<br/>(min/max/avg/stddev/top-values)"]
-    V -->|"meta"| META["Templated schema answer<br/>(no LLM call — instant, free)"]
-    V -->|"rejected"| R["Retry with error context<br/>(max 3 attempts)"]
+    V -->|"Python"| PY["Pyodide + pandas<br/>(Dedicated Web Worker)"]
+    V -->|"insights"| STAT["Precomputed Stats via DuckDB<br/>(min/max/avg/stddev/top-values)"]
+    V -->|"meta"| META["Schema-based Response<br/>(Instant, client-side, zero LLM cost)"]
+    V -->|"rejected"| R["Self-Correction Loop<br/>(Max 3 retry attempts)"]
     R --> E
 
     STAT --> NAR["Edge Function<br/>/api/generate-insights"]
-    NAR --> G2["Same 5-provider fallback chain<br/>(narrates ONLY the real stats)"]
+    NAR --> G2["Narrative Generation<br/>(Strictly narrates computed figures)"]
     G2 --> NARR["Narrative"]
 
     D --> RES["Result"]
     PY --> RES
-    RES --> C["Chart / table / big number"]
+    RES --> C["Interactive Visualization<br/>(Charts / Tables / Metric Cards)"]
     NARR --> C
     META --> C
 ```
 
-Everything except the LLM calls runs **entirely in your browser** — DuckDB-WASM for SQL and for the insights engine's stat queries, Pyodide (in a Web Worker, so it never freezes the UI) for statistical Python. The only server-side code is two small serverless functions that proxy whichever model provider is selected, so no API key ever reaches the client. The insights engine specifically never lets the model invent a number — it only ever narrates figures a real DuckDB query already computed.
+Everything except the LLM call runs **entirely in the browser** — DuckDB-WASM for SQL queries, Pyodide (in a dedicated Web Worker) for statistical Python, and PapaParse/SheetJS for parsing files locally.
 
 ## Screenshots
 
@@ -51,78 +58,75 @@ Everything except the LLM calls runs **entirely in your browser** — DuckDB-WAS
 |---|---|
 | ![Homepage](docs/screenshots/01-homepage.png) Homepage | ![SQL-answered question](docs/screenshots/02-sql-answer-chart.png) SQL answer, chart + code shown |
 
-*(See `demo-script.md` for the full shot list.)*
+## Key Technical Decisions
 
-## Why these specific choices
-
-| Choice | Why |
+| Choice | Rationale |
 |---|---|
-| DuckDB-WASM over a backend DB | Zero server cost, zero server security surface — nothing executes anywhere but the user's own browser |
-| Pyodide in a **Web Worker**, warmed up in the background right after upload | Running Python/pandas on the main thread would freeze the UI during the ~10-20s first load; the worker keeps the page responsive, and starting that download immediately after upload (Phase 25) means it's often already done by the time a question actually needs it — skipped automatically if the browser signals data-saver mode |
-| Groq, Gemini, Mistral, Cerebras, Cohere — 5 free-tier providers with automatic server-side failover (Phase 30) | Each has a workable free tier with a different rate-limit window (per-minute, per-day, per-month); picking one and cascading through the rest on failure means a single provider being rate-limited no longer means "server busy" |
-| Validation layer, not just prompting | An LLM will occasionally write `MAX revenue` instead of `MAX(revenue)`, or invent a `profit_margin` column that doesn't exist. Prompting reduces this; a real validator catches what prompting misses |
-| Self-correction loop | When validation or execution fails, the exact error is fed back to the model for a fix — turns "rejected" into "usually just works" |
-| Vitest + CI | 208 tests, including mocked integration tests of the retry loop itself (not just the validators) and CSV edge cases (BOM, encodings, delimiters, line endings, size caps) — CI runs on every push |
+| **DuckDB-WASM over backend DB** | Zero server costs, zero security surface on the server, instant analytics directly inside browser memory. |
+| **Pyodide in a Web Worker** | Warmed up in the background so heavy statistical libraries (NumPy, pandas) load without freezing the UI thread. |
+| **5-Provider Failover Chain** | Supports Groq, Gemini, Mistral, Cerebras, and Cohere. If one provider hits a rate limit, requests automatically cascade to the next available provider. |
+| **Validation Layer** | Prevents prompt failures, schema hallucinations, and non-SELECT statements before code reaches the execution engines. |
+| **Self-Correction Retry Loop** | Feeds runtime or validation errors directly back into the LLM context to automatically fix syntax and logic errors. |
+| **Comprehensive Test Suite** | 200+ unit and integration tests covering parsing, safety validation, chart heuristics, failover logic, and retry cycles. |
 
-## Local development
+## Feature Overview
 
-This project has a Vercel serverless function (`/api/generate-query.ts`), so plain `npm run dev` will run the frontend but the API route won't work — use the Vercel CLI:
+- **Multi-Format Ingestion**: Upload CSV, Excel (`.xlsx`, `.xls`), and JSON files, or use the pre-packaged 1,440-row demo dataset.
+- **Smart Routing**: Routes plain-English questions to DuckDB SQL, Python/pandas, statistical narrative insights, or instant meta-analysis.
+- **Interactive Visualizations**: Automatic selection of pie, bar, line, and KPI metrics powered by ECharts and Recharts, with full table views always available.
+- **Natural Language Chart Adjustments**: Prompt adjustments like *"change to bar chart"* or *"sort descending"* update visualizations immediately client-side.
+- **Multi-Turn Memory**: Follow up seamlessly on previous queries (e.g., *"now group that by country"*).
+- **Session Cache**: Immediate responses for repeated or sample questions without unnecessary API consumption.
+- **Dev Mode & Code Inspection**: Inspect and copy the exact generated SQL or Python code behind every answer.
+- **Export Capabilities**: Export rendered charts as PNG images or generate comprehensive Markdown conversation summaries.
+- **Optional Google Authentication & History**: Persist conversations securely with Supabase OAuth and Row-Level Security (RLS).
+- **API Rate Limiting**: Built-in edge protection with Upstash Redis.
 
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- [Vercel CLI](https://vercel.com/docs/cli) (recommended for running local API routes)
+- At least one free LLM API key (e.g., [Groq](https://console.groq.com), [Google Gemini](https://aistudio.google.com/apikey), [Mistral](https://console.mistral.ai), [Cerebras](https://cloud.cerebras.ai), or [Cohere](https://dashboard.cohere.com))
+
+### Installation & Local Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/HarshPatil0804/Data-Analyst-AI-Agent.git
+   cd Data-Analyst-AI-Agent
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Configure environment variables:**
+   ```bash
+   cp .env.local.example .env.local
+   ```
+   Add your API key (e.g. `GROQ_API_KEY=...`) to `.env.local`.
+
+4. **Run the development server:**
+   ```bash
+   vercel dev
+   ```
+   *(Or run `npm run dev` to preview the frontend only).*
+
+## Running Tests
+
+```bash
+npm test          # Run test suite once
+npm run test:watch # Run in watch mode
 ```
-npm install -g vercel
-npm install
-cp .env.local.example .env.local   # then paste your real key(s) into .env.local
-vercel dev
-```
 
-Get a free Groq API key (no card required) at https://console.groq.com — that's the only one required. Everything else is optional: add any of `GEMINI_API_KEY` ([aistudio.google.com](https://aistudio.google.com/apikey)), `MISTRAL_API_KEY` ([console.mistral.ai](https://console.mistral.ai)), `CEREBRAS_API_KEY` ([cloud.cerebras.ai](https://cloud.cerebras.ai)), or `COHERE_API_KEY` ([dashboard.cohere.com](https://dashboard.cohere.com)) — all free, none need a card. More keys means more automatic failover (Phase 30): if your preferred provider is rate-limited, the server tries the next configured one immediately instead of showing an error. Missing keys are simply skipped, not required.
+Runs comprehensive tests covering file parsers, SQL/Python validators, chart detectors, failover chains, and execution retries.
 
-## Testing
+## Deployment
 
-```
-npm test          # run once
-npm run test:watch
-```
-
-208 tests: CSV parsing (including edge cases — BOM, non-UTF-8 encodings, delimiters, line endings, size caps), the SQL/Python validators, chart-type selection, conversation-history summarization, a sanity check on the bundled sample dataset, the 5-provider abstraction and its automatic failover cascade, the shared model-response JSON parser and its repair pass for malformed multi-line code (mocked fetch — no real API calls or keys needed), the meta-engine phrasing/greeting classifier, the chart-tweak and follow-up-suggestion parsers, the conversation-report builder, and integration tests of the generate→validate→execute→retry orchestration loop (mocked LLM/execution, no network needed). CI (`.github/workflows/ci.yml`) runs the full suite plus a production build on every push and pull request to `main`.
-
-There's also a separate, non-CI eval suite (`npm run eval`) that hits the real LLM against 18 questions to catch prompt regressions — see `eval-set.md` for why it's deliberately kept out of CI.
-
-## Deploying
-
-Push to GitHub, import the repo in Vercel, then add `GROQ_API_KEY` (required) and optionally any of `GEMINI_API_KEY` / `MISTRAL_API_KEY` / `CEREBRAS_API_KEY` / `COHERE_API_KEY` under Project Settings → Environment Variables and redeploy.
-
-## Feature overview
-
-- Drag-and-drop CSV upload with client-side type inference, malformed-row handling, and a one-click bundled sample dataset (1,440 rows, 90 days, 4 regions/products) for zero-setup demos
-- Natural language → SQL (DuckDB-WASM), Python (Pyodide/pandas), a narrated "insights" answer over real precomputed stats, or a "meta" answer about the dataset's structure/capabilities — router picks per question
-- Off-topic questions get a distinct, honest decline from "on-topic but this metric doesn't exist" — the app never pretends to be a general chatbot
-- Repeat questions (re-clicking a sample question, asking the same thing twice) answer instantly from an in-memory session cache instead of burning another LLM call — cleared on reset/new upload, and switching model provider always forces a fresh call
-- Greetings and small talk ("hi", "thanks!") get a friendly reply instead of the off-topic decline — still can't be talked into answering anything unrelated to the data
-- A proactive welcome message right after upload — real row/column counts and a data-quality heads-up (e.g. "region is missing values in 12% of rows") before you've asked anything
-- Follow-up suggestions after every answer, generated from the real schema (not hardcoded) — Dev Mode toggle shows the SQL/Python behind any answer, with a one-click copy
-- Natural-language chart tweaks ("make it a bar chart", "sort descending") apply instantly to the last answer — no LLM call, since nothing new needs computing
-- Regenerate button to force a fresh (non-cached) attempt at the same question; export any chart as a PNG, or the whole conversation as a Markdown report
-- Dev Mode toggle — reveals the exact generated SQL/Python behind each answer
-- Switchable model provider (Groq, Gemini, Mistral, Cerebras, or Cohere) via a dropdown showing each model's name and a quick descriptor (Fast, Balanced, Efficient, Fastest, Fallback) — your pick is remembered and shown per-answer. If your preferred provider is rate-limited, the server automatically tries the next configured one instead of failing — and if that happens, the answer is honestly labeled "auto-switched," never silently swapped
-- Charts auto-selected by result shape (pie/bar/line/big-number), tables always available as ground truth
-- Safety validator: blocks non-SELECT statements, unknown tables/columns, unsafe Python patterns; caps result size
-- Self-correcting retry loop (max 3 attempts) with full error context fed back to the model
-- Multi-turn conversation memory — follow-up questions like "now break that down by region" work
-- Fully client-side execution; only the LLM call touches a server
-
-## Known limitations / not implemented
-
-- Single flat table only — no joins, no multi-file uploads. Multi-statement CTEs (`WITH ... AS (...)`) aren't supported either, but single-level subqueries and window functions are (e.g. "top N per group" via `ROW_NUMBER() OVER (PARTITION BY ...)`) — see `sqlValidator.ts` for exactly what's allowed
-- The SQL/Python validators are heuristic, not full parsers — they catch destructive statements and hallucinated columns, not every possible malformed query (that's what the retry loop is for)
-- No auth/persistence — this is a stateless, single-session tool by design
-
-## More
-
-- [`ENGINEERING_JOURNAL.md`](./ENGINEERING_JOURNAL.md) — real bugs found and fixed during this build, and what each one actually taught
-- [`demo-script.md`](./demo-script.md) — a ~60-90s shot list for a demo video
-- [`eval-set.md`](./eval-set.md) — how the prompt itself gets regression-tested
-
-## License
-
-[MIT](./LICENSE) — do whatever you want with this, no attribution required (though a star is always appreciated).
+1. Push your repository to GitHub.
+2. Import the project into [Vercel](https://vercel.com).
+3. Set your environment variables (`GROQ_API_KEY`, etc.) in **Project Settings → Environment Variables**.
+4. Deploy!
