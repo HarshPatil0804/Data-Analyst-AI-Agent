@@ -1,10 +1,13 @@
 # AI Data Analyst Agent
 
 [![CI](https://github.com/HarshPatil0804/Data-Analyst-AI-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/HarshPatil0804/Data-Analyst-AI-Agent/actions/workflows/ci.yml)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Online-success?style=flat&logo=vercel)](https://ai-data-analyst-agent-one.vercel.app/)
 ![tests](https://img.shields.io/badge/tests-208%20passing-brightgreen)
 ![zero server cost](https://img.shields.io/badge/server%20cost-%240-blue)
 
-Upload a CSV, Excel (.xlsx), or JSON file, ask questions about it in plain English, and get a real, verified, executed answer back — not a guess. Loads a sample dataset with one click, no upload required.
+> 🚀 **Live Application**: **[Try it live here → https://ai-data-analyst-agent-one.vercel.app/](https://ai-data-analyst-agent-one.vercel.app/)** *(Loads an instant 1,440-row dataset with one click — no file upload or login required!)*
+
+Upload a CSV, Excel (.xlsx), or JSON file, ask questions about it in plain English, and get a real, verified, executed answer back — not a guess.
 
 **Data privacy, in one line:** your data never leaves your browser — DuckDB and Python both run client-side; the only thing sent to a server is the plain-text question itself, forwarded to whichever model provider generates query code (Groq, Gemini, Mistral, Cerebras, or Cohere), never your raw dataset.
 
