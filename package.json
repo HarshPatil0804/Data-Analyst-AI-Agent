@@ -19,11 +19,11 @@
     "type": "git",
     "url": "https://github.com/HarshPatil0804/Data-Analyst-AI-Agent.git"
   },
-  "homepage": "https://ai-data-analyst-agent-one.vercel.app/",
+  "homepage": "https://github.com/HarshPatil0804/Data-Analyst-AI-Agent",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
